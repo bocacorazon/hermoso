@@ -1,0 +1,32 @@
+{
+  "schema_version": "hermoso-profile/v1",
+  "name": "default",
+  "description": "Conservative single-profile bindings; override profile names and ordered skills for a local Hermes fleet.",
+  "phases": {
+    "controller": {
+      "profile": "default",
+      "skills": ["hermoso", "kanban-orchestrator"]
+    },
+    "design": {
+      "profile": "default",
+      "skills": ["hermoso-design"],
+      "optional_spike_skill": "spike"
+    },
+    "construction": {
+      "orchestrator_profile": "default",
+      "orchestrator_skills": ["hermoso-construction", "kanban-orchestrator"],
+      "worker_profile": "default",
+      "worker_skills": ["hermoso-construction", "test-driven-development", "systematic-debugging"]
+    },
+    "integration": {
+      "profile": "default",
+      "skills": ["hermoso-construction", "test-driven-development", "systematic-debugging"],
+      "goal_mode": "integration"
+    }
+  },
+  "dispatch": {
+    "tenant_strategy": "project-derived",
+    "priority": 0,
+    "default_runtime_budget_seconds": 1800
+  }
+}

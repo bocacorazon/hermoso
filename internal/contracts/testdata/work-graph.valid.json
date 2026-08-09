@@ -1,0 +1,62 @@
+{
+  "schema_version": "1",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-1",
+    "feature_id": "feature-1",
+    "run_id": "run-1",
+    "repository": {
+      "repository": "/workspace/project",
+      "remote_url": "https://github.com/example/project.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-design",
+    "runtime": "hermes"
+  },
+  "revision": 1,
+  "items": [
+    {
+      "id": "domain",
+      "title": "Define domain contracts",
+      "prompt": "Implement and test versioned domain contracts.",
+      "acceptance_criteria": [
+        "All domain validation tests pass"
+      ],
+      "worker": {
+        "profile": "default",
+        "skills": [
+          {
+            "name": "test-driven-development"
+          }
+        ]
+      },
+      "expected_changed_surfaces": [
+        "internal/domain"
+      ],
+      "validation_commands": [
+        "go test ./internal/domain"
+      ]
+    },
+    {
+      "id": "cli",
+      "title": "Expose contract commands",
+      "prompt": "Add schema and validate commands.",
+      "acceptance_criteria": [
+        "Skills can consume schemas"
+      ],
+      "parents": [
+        "domain"
+      ],
+      "worker": {
+        "profile": "default",
+        "skills": [
+          {
+            "name": "test-driven-development"
+          }
+        ]
+      }
+    }
+  ]
+}

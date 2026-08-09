@@ -1,0 +1,59 @@
+{
+  "schema_version": "1",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-1",
+    "feature_id": "feature-1",
+    "run_id": "run-1",
+    "repository": {
+      "repository": "/workspace/project",
+      "remote_url": "https://github.com/example/project.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-design",
+    "runtime": "hermes"
+  },
+  "revision": 1,
+  "items": [
+    {
+      "id": "one",
+      "title": "One",
+      "prompt": "First item",
+      "acceptance_criteria": [
+        "Done"
+      ],
+      "parents": [
+        "two"
+      ],
+      "worker": {
+        "profile": "default",
+        "skills": [
+          {
+            "name": "tdd"
+          }
+        ]
+      }
+    },
+    {
+      "id": "two",
+      "title": "Two",
+      "prompt": "Second item",
+      "acceptance_criteria": [
+        "Done"
+      ],
+      "parents": [
+        "one"
+      ],
+      "worker": {
+        "profile": "default",
+        "skills": [
+          {
+            "name": "tdd"
+          }
+        ]
+      }
+    }
+  ]
+}

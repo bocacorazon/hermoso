@@ -1,0 +1,47 @@
+{
+  "schema_version": "1",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-1",
+    "feature_id": "feature-1",
+    "run_id": "run-1",
+    "repository": {
+      "repository": "/workspace/project",
+      "remote_url": "https://github.com/example/project.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-design",
+    "runtime": "hermes"
+  },
+  "revision": 1,
+  "feature": {
+    "id": "feature-1",
+    "title": "Add contract validation",
+    "objective": "Reject malformed phase handoffs",
+    "target_repository": {
+      "repository": "/workspace/project",
+      "remote_url": "https://github.com/example/project.git",
+      "default_branch": "main"
+    }
+  },
+  "acceptance_criteria": [
+    "Malformed contracts are rejected",
+    "Valid contracts are accepted"
+  ],
+  "constraints": [
+    "Use the Go standard library"
+  ],
+  "non_goals": [
+    "Implement verification commands"
+  ],
+  "decisions": [
+    {
+      "decision": "Use JSON Schema draft 2020-12",
+      "rationale": "It supports current schema tooling"
+    }
+  ],
+  "unresolved_questions": [],
+  "complexity": "standard"
+}

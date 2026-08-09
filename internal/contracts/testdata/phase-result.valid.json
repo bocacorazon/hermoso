@@ -1,0 +1,43 @@
+{
+  "schema_version": "1",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-1",
+    "feature_id": "feature-1",
+    "run_id": "run-1",
+    "repository": {
+      "repository": "/workspace/project",
+      "remote_url": "https://github.com/example/project.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-design",
+    "runtime": "hermes"
+  },
+  "phase": "design",
+  "status": "completed",
+  "outputs": [
+    {
+      "context": {
+        "schema_version": "hermoso-context/v1",
+        "project_id": "project-1",
+        "feature_id": "feature-1",
+        "run_id": "run-1",
+        "repository": {
+          "repository": "/workspace/project",
+          "remote_url": "https://github.com/example/project.git",
+          "default_branch": "main"
+        }
+      },
+      "kind": "feature-design",
+      "path": ".hermoso/runs/run-1/feature-design.json",
+      "revision": 1,
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "summary": "Design contracts are ready for approval.",
+  "unresolved_blockers": [],
+  "completed_at": "2026-08-02T12:00:00Z",
+  "inputs": []
+}
