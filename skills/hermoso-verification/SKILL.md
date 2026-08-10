@@ -1,6 +1,6 @@
 ---
 name: hermoso-verification
-description: "Use when construction reaches awaiting_verification to run the approved hidden contract read-only, interpret its persisted report, apply qualitative rubric judgments for pending outcomes, route one remediation round, and publish passing Gherkin."
+description: "Use when construction reaches awaiting_verification to run the approved hidden contract read-only, interpret its persisted report, apply qualitative rubric judgments for pending outcomes, author remediation specs for failed attempts, route one remediation round, and publish passing Gherkin."
 version: 1.1.0
 author: Hermoso
 license: MIT
@@ -110,10 +110,30 @@ The skill provides the qualitative assessment (pass/fail, reasoning, criteria).
   `hermoso resume ... --json`. Hermoso revalidates an existing publication
   commit before completing the spine refresh; do not rerun the behavioral
   judgments as a new attempt.
-- **First fail:** Hermoso creates exactly one sanitized remediation spec and
-  round. Refresh `construction ready`, dispatch those visible cards, and follow
-  `hermoso-construction`. The cards contain visible requirements, criteria,
-  surfaces, and sanitized actual behavior—not hidden scenarios or fixtures.
+- **First fail:** Hermoso transitions to `construction/awaiting_remediation`.
+  No remediation round is created yet — the skill must author it. Read the
+  failed report from the JSON output (outcomes, evidence, summaries) and
+  author a `SkillRemediation` spec with targeted needs and a work graph:
+
+  1. For each failed outcome, write a `RemediationNeed` explaining what went
+     wrong: `Expected` (what should have happened), `Actual` (what the
+     evidence shows), and the affected requirement/criterion/surface IDs.
+  2. Author a `WorkGraph` with work items that have specific, targeted prompts
+     — not generic "fix the implementation" text. Include the correct worker
+     profile and skill bindings. Set `Producer` to
+     `{Skill: "hermoso-verification", Runtime: "agent"}`.
+  3. Write the spec to a JSON file and submit:
+
+  ```sh
+  hermoso verification remediate <project-id> <feature-id> <run-id> <repository> <spec.json> --json
+  ```
+
+  Hermoso validates the spec structure, wraps it in a remediation round with
+  deterministic fields (number, source hash, graph hash), and transitions to
+  `construction/pending`. Then refresh `construction ready`, dispatch the
+  visible cards, and follow `hermoso-construction`. The cards contain visible
+  requirements, criteria, surfaces, and the skill-authored remediation
+  guidance — not hidden scenarios or fixtures.
 - **Second fail:** the run is blocked. Do not create a third round.
 - **Blocked/inconclusive:** surface the persisted findings for human action. If
   the external verifier condition is corrected, run `hermoso resume ... --json`
