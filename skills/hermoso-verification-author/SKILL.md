@@ -77,6 +77,11 @@ Every scenario has exactly one `@scenario:<id>` and one
 Do not use placeholders, hidden examples that cannot be reproduced, or an
 oracle that merely restates the implementation.
 
+Before finalizing, verify no scenario contains unresolved placeholders
+(TODO, TBD, NEEDS CLARIFICATION, [PLACEHOLDER]) in steps, names, or data.
+The contract validator checks structural properties only — content quality
+is the author's responsibility.
+
 ## Completion
 
 Present the human reviewer with the exact package revision/hash, coverage,
