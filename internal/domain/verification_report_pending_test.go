@@ -62,3 +62,47 @@ func validPendingReport() VerificationReport {
 // Suppress unused import warnings — these will be used in later tasks.
 var _ = json.Marshal
 var _ = time.Now
+
+func TestQualitativeJudgmentJSONRoundTrip(t *testing.T) {
+	original := QualitativeJudgment{
+		Judge:     "hermoso-verification",
+		Reasoning: "output matches all rubric criteria",
+		Criteria:  []string{"correctness", "completeness"},
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored QualitativeJudgment
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Judge != original.Judge || restored.Reasoning != original.Reasoning ||
+		len(restored.Criteria) != 2 {
+		t.Fatalf("round-trip mismatch: %+v", restored)
+	}
+}
+
+func TestSkillJudgmentJSONRoundTrip(t *testing.T) {
+	original := SkillJudgment{
+		JudgmentID: "judgment-rubric-1",
+		Status:     JudgmentPass,
+		Summary:    "all criteria satisfied",
+		Qualitative: &QualitativeJudgment{
+			Judge:      "hermoso-verification",
+			Reasoning:  "output matches criteria",
+			Criteria:   []string{"correctness"},
+		},
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored SkillJudgment
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.JudgmentID != original.JudgmentID || restored.Status != original.Status {
+		t.Fatalf("round-trip mismatch: %+v", restored)
+	}
+}

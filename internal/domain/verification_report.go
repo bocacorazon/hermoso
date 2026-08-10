@@ -46,6 +46,20 @@ type JudgmentOutcome struct {
 	SurfaceIDs             []string             `json:"surface_ids"`
 	Summary                string               `json:"summary"`
 	Evidence               VerificationEvidence `json:"evidence"`
+	QualitativeJudgment    *QualitativeJudgment `json:"qualitative_judgment,omitempty"`
+}
+
+type QualitativeJudgment struct {
+	Judge     string   `json:"judge"`
+	Reasoning string   `json:"reasoning"`
+	Criteria  []string `json:"criteria"`
+}
+
+type SkillJudgment struct {
+	JudgmentID  string              `json:"judgment_id"`
+	Status      JudgmentStatus      `json:"status"`
+	Summary     string              `json:"summary"`
+	Qualitative *QualitativeJudgment `json:"qualitative,omitempty"`
 }
 
 type SurfaceResolution struct {
