@@ -45,7 +45,7 @@ Usage:
   hermoso context <project-id> <feature-id> <run-id> <repository>
   hermoso model <build|status|query|explain> ...
   hermoso design put <project-id> <feature-id> <run-id> <repository> <path>
-  hermoso verification <put|run|judge> ...
+  hermoso verification <put|run|judge|remediate> ...
   hermoso approve design <project-id> <feature-id> <run-id> <repository> <revision> <package-hash> <actor> [comment]
   hermoso graph put <project-id> <feature-id> <run-id> <repository> <path>
   hermoso construction <prepare|ready|integrate> ...
@@ -65,7 +65,7 @@ Commands:
   context    Resolve and validate one canonical execution context
   model      Build and query the repository knowledge spine
   design     Persist a context-bound feature design
-  verification Persist a hidden feature verification contract, run verifications, or judge pending outcomes
+  verification Persist a hidden feature verification contract, run verifications, judge pending outcomes, or remediate failures
   approve    Approve the exact current design package revision and hash
   graph      Persist a context-bound construction work graph
   construction Prepare workspaces, emit ready cards, or integrate branches
@@ -453,8 +453,8 @@ func (a application) runDesign(ctx context.Context, args []string) int {
 }
 
 func (a application) runVerificationContract(ctx context.Context, args []string) int {
-	if len(args) == 0 || (args[0] != "put" && args[0] != "run" && args[0] != "judge") {
-		return a.out.usageError("verification requires: put <full-context> <path> or run <full-context> or judge <full-context> <judgments-path>")
+	if len(args) == 0 || (args[0] != "put" && args[0] != "run" && args[0] != "judge" && args[0] != "remediate") {
+		return a.out.usageError("verification requires: put <full-context> <path> or run <full-context> or judge <full-context> <judgments-path> or remediate <full-context> <spec-path>")
 	}
 	action := args[0]
 	store, execution, rest, err := a.resolve(ctx, args[1:])
@@ -499,6 +499,24 @@ func (a application) runVerificationContract(ctx context.Context, args []string)
 			"verification judge",
 			map[string]any{"run": run, "report": report},
 			fmt.Sprintf("verification judged: verdict=%s\n", report.Verdict),
+		)
+	}
+	if action == "remediate" {
+		if len(rest) != 1 {
+			return a.out.usageError("verification remediate requires exactly one spec JSON path after full context")
+		}
+		data, err := a.deps.FS.ReadFile(rest[0])
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+		}
+		run, changed, err := service.PutRemediation(ctx, execution, data)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorState, err.Error())
+		}
+		return a.out.success(
+			"verification remediate",
+			map[string]any{"run": run, "changed": changed},
+			fmt.Sprintf("remediation round %d persisted\n", len(run.ConstructionRounds)),
 		)
 	}
 	if len(rest) != 1 {
