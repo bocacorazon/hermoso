@@ -481,7 +481,11 @@ func aggregateVerdict(outcomes []domain.JudgmentOutcome) domain.VerificationVerd
 		if outcome.Status == domain.JudgmentBlocked {
 			return domain.VerificationBlocked
 		}
-		if outcome.Status == domain.JudgmentFail {
+		if outcome.Status == domain.JudgmentPending {
+			verdict = domain.VerificationPending
+			continue
+		}
+		if outcome.Status == domain.JudgmentFail && verdict != domain.VerificationPending {
 			verdict = domain.VerificationFail
 		}
 	}
