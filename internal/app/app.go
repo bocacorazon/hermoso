@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bocacorazon/hermoso/internal/contracts"
 	"github.com/bocacorazon/hermoso/internal/domain"
+	"github.com/bocacorazon/hermoso/internal/model"
 	"github.com/bocacorazon/hermoso/internal/repository"
 	"github.com/bocacorazon/hermoso/internal/state"
 	"github.com/bocacorazon/hermoso/internal/workflow"
@@ -34,14 +37,16 @@ Usage:
   hermoso [--json] <command> [arguments]
   hermoso help
   hermoso version
-  hermoso schema <feature-design|work-graph|phase-result>
-  hermoso validate <feature-design|work-graph|phase-result> <path> <project-id> <feature-id> <run-id> <repository>
+  hermoso schema <feature-design|feature-verification-contract|work-graph|phase-result>
+  hermoso validate <feature-design|feature-verification-contract|work-graph|phase-result> <path> <project-id> <feature-id> <run-id> <repository>
   hermoso init <repository>
   hermoso start <feature-id> <repository>
   hermoso status <repository>
   hermoso context <project-id> <feature-id> <run-id> <repository>
+  hermoso model <build|status|query|explain> ...
   hermoso design put <project-id> <feature-id> <run-id> <repository> <path>
-  hermoso approve design <project-id> <feature-id> <run-id> <repository> <revision> <hash> <actor> [comment]
+  hermoso verification <put|run|judge> ...
+  hermoso approve design <project-id> <feature-id> <run-id> <repository> <revision> <package-hash> <actor> [comment]
   hermoso graph put <project-id> <feature-id> <run-id> <repository> <path>
   hermoso construction <prepare|ready|integrate> ...
   hermoso task bind <project-id> <feature-id> <run-id> <repository> <work-item-id> <task-id>
@@ -58,14 +63,16 @@ Commands:
   start      Create a design-phase run
   status     Show project and run state
   context    Resolve and validate one canonical execution context
+  model      Build and query the repository knowledge spine
   design     Persist a context-bound feature design
-  approve    Approve the exact current design revision and hash
+  verification Persist a hidden feature verification contract, run verifications, or judge pending outcomes
+  approve    Approve the exact current design package revision and hash
   graph      Persist a context-bound construction work graph
   construction Prepare workspaces, emit ready cards, or integrate branches
   task       Record an external Hermes Kanban task binding
   work       Start, complete, or block a synchronized work item
   result     Persist a construction phase result
-  resume     Resume blocked construction without resetting user work
+  resume     Resume blocked construction or retry blocked verification
 
 Options:
   -h, --help  Show this help
@@ -141,8 +148,12 @@ func (a application) run(ctx context.Context, args []string) int {
 		return a.runStatus(ctx, args[1:])
 	case "context":
 		return a.runContext(ctx, args[1:])
+	case "model":
+		return a.runModel(ctx, args[1:])
 	case "design":
 		return a.runDesign(ctx, args[1:])
+	case "verification":
+		return a.runVerificationContract(ctx, args[1:])
 	case "approve":
 		return a.runApprove(ctx, args[1:])
 	case "graph":
@@ -160,6 +171,165 @@ func (a application) run(ctx context.Context, args []string) int {
 	default:
 		return a.out.usageError(fmt.Sprintf("unknown command %q", args[0]))
 	}
+}
+
+func (a application) runModel(ctx context.Context, args []string) int {
+	if len(args) < 3 {
+		return a.out.usageError("model requires an action, project ID, and repository")
+	}
+	action, projectID, repositoryPath := args[0], args[1], args[2]
+	store, status, err := state.Load(ctx, repositoryPath)
+	if err != nil {
+		return a.stateFailure(err)
+	}
+	if status.Project.ProjectID != projectID {
+		return a.stateFailure(fmt.Errorf("%w: supplied project ID does not match repository state", state.ErrIncompatibleState))
+	}
+	rest := args[3:]
+	switch action {
+	case "build":
+		revision, scipPath, err := parseModelBuildOptions(rest)
+		if err != nil {
+			return a.out.usageError(err.Error())
+		}
+		var previous *domain.ModelSnapshot
+		_, current, err := store.CurrentModel(ctx)
+		if err == nil {
+			previous = &current
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return a.stateFailure(err)
+		}
+		snapshot, err := model.Build(ctx, model.BuildRequest{
+			Project: status.Project, RepositoryRoot: store.Repository().Root,
+			Revision: revision, SCIPPath: scipPath, GeneratedAt: a.deps.Now(), Previous: previous,
+		})
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorValidation, err.Error())
+		}
+		snapshot, changed, err := store.PutModelSnapshot(ctx, snapshot)
+		if err != nil {
+			return a.stateFailure(err)
+		}
+		return a.out.success("model build", map[string]any{
+			"snapshot": snapshot.Manifest, "changed": changed,
+		}, fmt.Sprintf("repository model %s at %s\n", snapshot.Manifest.SnapshotID, snapshot.Manifest.SourceRevision))
+	case "status":
+		if len(rest) != 0 {
+			return a.out.usageError("model status accepts only project ID and repository")
+		}
+		head, err := model.ResolveRevision(ctx, store.Repository().Root, "HEAD")
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+		}
+		pointer, _, err := store.CurrentModel(ctx)
+		modelStatus := model.ModelStatus{HeadRevision: head}
+		switch {
+		case err == nil:
+			modelStatus.Exists = true
+			modelStatus.Pointer = &pointer
+			modelStatus.Fresh = pointer.SourceRevision == head
+			if !modelStatus.Fresh {
+				modelStatus.StaleReasons = []string{"repository HEAD differs from the indexed source revision"}
+			}
+		case errors.Is(err, os.ErrNotExist):
+			modelStatus.StaleReasons = []string{"no repository model has been built"}
+		default:
+			return a.stateFailure(err)
+		}
+		return a.out.success("model status", map[string]any{"model": modelStatus}, fmt.Sprintf("repository model fresh: %t\n", modelStatus.Fresh))
+	case "query":
+		if len(rest) < 1 {
+			return a.out.usageError("model query requires orientation, task, impact, or evidence")
+		}
+		mode := model.QueryMode(rest[0])
+		queryArgs, budget, err := parseModelQueryOptions(rest[1:])
+		if err != nil {
+			return a.out.usageError(err.Error())
+		}
+		request := model.QueryRequest{Mode: mode, BudgetBytes: budget}
+		if mode == model.QueryTask || mode == model.QueryOrientation {
+			request.Text = strings.Join(queryArgs, " ")
+		} else {
+			request.NodeIDs = queryArgs
+		}
+		pointer, snapshot, err := store.CurrentModel(ctx)
+		if err != nil {
+			return a.stateFailure(err)
+		}
+		result, err := model.Query(snapshot, request)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorValidation, err.Error())
+		}
+		head, err := model.ResolveRevision(ctx, store.Repository().Root, "HEAD")
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+		}
+		return a.out.success("model query", map[string]any{
+			"result": result, "fresh": pointer.SourceRevision == head,
+		}, result.Rendered)
+	case "explain":
+		queryArgs, budget, err := parseModelQueryOptions(rest)
+		if err != nil {
+			return a.out.usageError(err.Error())
+		}
+		if len(queryArgs) != 1 {
+			return a.out.usageError("model explain requires exactly one node ID")
+		}
+		_, snapshot, err := store.CurrentModel(ctx)
+		if err != nil {
+			return a.stateFailure(err)
+		}
+		result, err := model.Query(snapshot, model.QueryRequest{
+			Mode: model.QueryEvidence, NodeIDs: queryArgs, BudgetBytes: budget,
+		})
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorValidation, err.Error())
+		}
+		return a.out.success("model explain", map[string]any{"result": result}, result.Rendered)
+	default:
+		return a.out.usageError("model requires build, status, query, or explain")
+	}
+}
+
+func parseModelBuildOptions(args []string) (string, string, error) {
+	revision := "HEAD"
+	scipPath := ""
+	for len(args) != 0 {
+		if len(args) < 2 {
+			return "", "", fmt.Errorf("%s requires a value", args[0])
+		}
+		switch args[0] {
+		case "--revision":
+			revision = args[1]
+		case "--scip":
+			scipPath = args[1]
+		default:
+			return "", "", fmt.Errorf("unknown model build option %q", args[0])
+		}
+		args = args[2:]
+	}
+	return revision, scipPath, nil
+}
+
+func parseModelQueryOptions(args []string) ([]string, int, error) {
+	budget := 12 * 1024
+	values := make([]string, 0, len(args))
+	for index := 0; index < len(args); index++ {
+		if args[index] != "--budget" {
+			values = append(values, args[index])
+			continue
+		}
+		if index+1 >= len(args) {
+			return nil, 0, errors.New("--budget requires a byte count")
+		}
+		parsed, err := strconv.Atoi(args[index+1])
+		if err != nil || parsed < 1024 {
+			return nil, 0, errors.New("--budget must be an integer of at least 1024")
+		}
+		budget = parsed
+		index++
+	}
+	return values, budget, nil
 }
 
 func (a application) runInit(ctx context.Context, args []string) int {
@@ -275,7 +445,97 @@ func (a application) runDesign(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorState, err.Error())
 	}
-	return a.out.success("design put", map[string]any{"run": run, "design": run.Design, "changed": changed}, fmt.Sprintf("persisted design revision %d %s\n", run.Design.Contract.Revision, run.Design.Hash))
+	return a.out.success(
+		"design put",
+		map[string]any{"run": run, "design": run.Design, "changed": changed},
+		fmt.Sprintf("persisted feature design revision %d %s\n", run.Design.Feature.Revision, run.Design.FeatureHash),
+	)
+}
+
+func (a application) runVerificationContract(ctx context.Context, args []string) int {
+	if len(args) == 0 || (args[0] != "put" && args[0] != "run" && args[0] != "judge") {
+		return a.out.usageError("verification requires: put <full-context> <path> or run <full-context> or judge <full-context> <judgments-path>")
+	}
+	action := args[0]
+	store, execution, rest, err := a.resolve(ctx, args[1:])
+	if err != nil {
+		return a.stateFailure(err)
+	}
+	service, err := a.service(store)
+	if err != nil {
+		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+	}
+	if action == "run" {
+		if len(rest) != 0 {
+			return a.out.usageError("verification run does not accept arguments after full context")
+		}
+		run, report, err := service.RunVerification(ctx, execution)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorState, err.Error())
+		}
+		return a.out.success(
+			"verification run",
+			map[string]any{"run": run, "report": report},
+			fmt.Sprintf("verification attempt %d: %s\n", report.Attempt, report.Verdict),
+		)
+	}
+	if action == "judge" {
+		if len(rest) != 1 {
+			return a.out.usageError("verification judge requires exactly one judgments JSON path after full context")
+		}
+		data, err := a.deps.FS.ReadFile(rest[0])
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+		}
+		var judgments []domain.SkillJudgment
+		if err := json.Unmarshal(data, &judgments); err != nil {
+			return a.out.failure(ExitFailure, ErrorValidation, fmt.Sprintf("decode judgments: %v", err))
+		}
+		run, report, err := service.JudgeVerification(ctx, execution, judgments)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorState, err.Error())
+		}
+		return a.out.success(
+			"verification judge",
+			map[string]any{"run": run, "report": report},
+			fmt.Sprintf("verification judged: verdict=%s\n", report.Verdict),
+		)
+	}
+	if len(rest) != 1 {
+		return a.out.usageError("verification put requires exactly one contract path after full context")
+	}
+	data, err := a.deps.FS.ReadFile(rest[0])
+	if err != nil {
+		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+	}
+	var contract domain.FeatureVerificationContract
+	if err := json.Unmarshal(data, &contract); err != nil {
+		return a.out.failure(ExitFailure, ErrorValidation, fmt.Sprintf("decode verification contract: %v", err))
+	}
+	if err := contract.Validate(); err != nil {
+		return a.out.failure(ExitFailure, ErrorValidation, err.Error())
+	}
+	assets := make(map[string][]byte, len(contract.Artifacts))
+	base := filepath.Dir(rest[0])
+	for _, artifact := range contract.Artifacts {
+		content, err := a.deps.FS.ReadFile(filepath.Join(base, filepath.FromSlash(artifact.Path)))
+		if err != nil {
+			return a.out.failure(
+				ExitFailure, ErrorInternal,
+				fmt.Sprintf("read verification artifact %q: %v", artifact.Path, err),
+			)
+		}
+		assets[artifact.Path] = content
+	}
+	run, changed, err := service.PutVerificationContract(ctx, execution, data, assets)
+	if err != nil {
+		return a.out.failure(ExitFailure, ErrorState, err.Error())
+	}
+	return a.out.success(
+		"verification put",
+		map[string]any{"run": run, "design": run.Design, "changed": changed},
+		fmt.Sprintf("persisted design package revision %d %s\n", run.Design.Revision, run.Design.PackageHash),
+	)
 }
 
 func (a application) runApprove(ctx context.Context, args []string) int {
@@ -331,7 +591,12 @@ func (a application) runGraph(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorState, err.Error())
 	}
-	return a.out.success("graph put", map[string]any{"run": run, "graph": run.Construction, "changed": changed}, fmt.Sprintf("persisted work graph revision %d %s\n", run.Construction.Graph.Revision, run.Construction.Hash))
+	construction := run.LatestConstruction()
+	return a.out.success(
+		"graph put",
+		map[string]any{"run": run, "graph": construction, "changed": changed},
+		fmt.Sprintf("persisted work graph revision %d %s\n", construction.Graph.Revision, construction.Hash),
+	)
 }
 
 func (a application) runConstruction(ctx context.Context, args []string) int {
@@ -467,7 +732,11 @@ func (a application) runResult(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorState, err.Error())
 	}
-	return a.out.success("result put", map[string]any{"run": run, "result": run.Construction.Result, "changed": changed}, "construction result persisted\n")
+	return a.out.success(
+		"result put",
+		map[string]any{"run": run, "result": run.LatestConstruction().Result, "changed": changed},
+		"construction result persisted\n",
+	)
 }
 
 func (a application) runResume(ctx context.Context, args []string) int {
@@ -486,7 +755,7 @@ func (a application) runResume(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorState, err.Error())
 	}
-	return a.out.success("resume", map[string]any{"run": run, "changed": changed}, "run resumed without resetting user work\n")
+	return a.out.success("resume", map[string]any{"run": run, "changed": changed}, "run resumed from durable state\n")
 }
 
 func (a application) stateFailure(err error) int {
