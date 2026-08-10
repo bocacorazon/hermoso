@@ -272,6 +272,9 @@ func (s Service) persistVerificationAttempt(
 		case domain.VerificationPass:
 			run.Phase = domain.PhaseVerification
 			run.Status = domain.StatusInProgress
+		case domain.VerificationPending:
+			run.Phase = domain.PhaseVerification
+			run.Status = domain.StatusAwaitingJudgment
 		case domain.VerificationFail:
 			if attempt.Number == 1 {
 				round, err := remediationRound(*run, attempt)
