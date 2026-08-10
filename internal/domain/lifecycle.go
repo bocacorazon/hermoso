@@ -530,6 +530,7 @@ var legalTransitions = map[lifecycleState]map[lifecycleState]struct{}{
 	{PhaseVerification, StatusAwaitingJudgment}: {
 		{PhaseVerification, StatusInProgress}: {}, {PhaseVerification, StatusBlocked}: {},
 		{PhaseVerification, StatusAwaitingRelease}: {}, {PhaseVerification, StatusCancelled}: {},
+		{PhaseConstruction, StatusPending}: {},
 	},
 	{PhaseVerification, StatusBlocked}: {
 		{PhaseVerification, StatusInProgress}: {}, {PhaseConstruction, StatusAwaitingVerification}: {},

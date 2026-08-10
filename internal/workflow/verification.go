@@ -700,3 +700,141 @@ func modelReference(snapshot domain.ModelSnapshot) domain.ModelReference {
 		VocabularyVersion: snapshot.Manifest.VocabularyVersion,
 	}
 }
+
+// JudgeVerification is Phase 2 of the two-phase verification flow.
+// The verification skill calls this to submit qualitative judgments for
+// outcomes that were left pending by the mechanical Phase 1 run (rubric oracles).
+// Go validates that every pending outcome receives a judgment, applies the
+// judgments to the report, re-aggregates the verdict, and transitions the run.
+func (s Service) JudgeVerification(
+	ctx context.Context,
+	execution domain.ContextRef,
+	judgments []domain.SkillJudgment,
+) (domain.Run, domain.VerificationReport, error) {
+	run, err := s.Store.Run(ctx, execution)
+	if err != nil {
+		return domain.Run{}, domain.VerificationReport{}, err
+	}
+	if run.Status != domain.StatusAwaitingJudgment {
+		return domain.Run{}, domain.VerificationReport{}, fmt.Errorf(
+			"judgeVerification: run status is %s, must be awaiting_judgment", run.Status,
+		)
+	}
+	if len(run.VerificationAttempts) == 0 {
+		return domain.Run{}, domain.VerificationReport{}, errors.New("judgeVerification: no verification attempts")
+	}
+	attempt := &run.VerificationAttempts[len(run.VerificationAttempts)-1]
+	report := attempt.Report
+
+	// Build a lookup of submitted judgments by ID.
+	submitted := make(map[string]domain.SkillJudgment, len(judgments))
+	for _, j := range judgments {
+		submitted[j.JudgmentID] = j
+	}
+
+	// Validate: every pending outcome must have a corresponding judgment,
+	// and no judgment may target a non-pending outcome.
+	pendingIDs := make(map[string]bool)
+	for i := range report.Outcomes {
+		outcome := &report.Outcomes[i]
+		if outcome.Status == domain.JudgmentPending {
+			pendingIDs[outcome.JudgmentID] = true
+			j, ok := submitted[outcome.JudgmentID]
+			if !ok {
+				return domain.Run{}, domain.VerificationReport{}, fmt.Errorf(
+					"judgeVerification: pending outcome %q has no submitted judgment", outcome.JudgmentID,
+				)
+			}
+			if j.Status != domain.JudgmentPass && j.Status != domain.JudgmentFail {
+				return domain.Run{}, domain.VerificationReport{}, fmt.Errorf(
+					"judgeVerification: judgment %q has invalid status %q (must be pass or fail)",
+					j.JudgmentID, j.Status,
+				)
+			}
+			if j.Qualitative == nil {
+				return domain.Run{}, domain.VerificationReport{}, fmt.Errorf(
+					"judgeVerification: judgment %q is missing qualitative details", j.JudgmentID,
+				)
+			}
+		}
+	}
+	for _, j := range judgments {
+		if !pendingIDs[j.JudgmentID] {
+			return domain.Run{}, domain.VerificationReport{}, fmt.Errorf(
+				"judgeVerification: judgment %q does not correspond to a pending outcome", j.JudgmentID,
+			)
+		}
+	}
+	if len(pendingIDs) == 0 {
+		return domain.Run{}, domain.VerificationReport{}, errors.New(
+			"judgeVerification: no pending outcomes to judge",
+		)
+	}
+
+	// Apply judgments to outcomes.
+	for i := range report.Outcomes {
+		outcome := &report.Outcomes[i]
+		if outcome.Status != domain.JudgmentPending {
+			continue
+		}
+		j := submitted[outcome.JudgmentID]
+		outcome.Status = j.Status
+		outcome.Summary = j.Summary
+		outcome.QualitativeJudgment = j.Qualitative
+	}
+
+	// Re-aggregate verdict and coverage.
+	// After judgment, the verification is complete — update the candidate model
+	// source revision to match the candidate commit (required for non-pending verdicts).
+	report.CandidateModel.SourceRevision = report.CandidateCommit
+	attempt.CandidateModel.SourceRevision = report.CandidateCommit
+	report.Verdict = aggregateVerdict(report.Outcomes)
+	report.Requirements = aggregateCoverage(report.Outcomes,
+		func(o domain.JudgmentOutcome) []string { return o.RequirementIDs }, nil, "requirement")
+	report.AcceptanceCriteria = aggregateCoverage(report.Outcomes,
+		func(o domain.JudgmentOutcome) []string { return o.AcceptanceCriterionIDs }, nil, "acceptance_criterion")
+
+	if err := report.Validate(); err != nil {
+		return domain.Run{}, domain.VerificationReport{}, fmt.Errorf("judgeVerification: report validation failed: %w", err)
+	}
+
+	reportHash, err := Hash(report)
+	if err != nil {
+		return domain.Run{}, domain.VerificationReport{}, err
+	}
+	attempt.Report = report
+	attempt.ReportHash = reportHash
+
+	// Persist: update the attempt in-place and transition the run.
+	updatedRun, err := s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+		r.VerificationAttempts[len(r.VerificationAttempts)-1] = *attempt
+		switch report.Verdict {
+		case domain.VerificationPass:
+			r.Phase = domain.PhaseVerification
+			r.Status = domain.StatusInProgress
+		case domain.VerificationFail:
+			if attempt.Number == 1 {
+				round, err := remediationRound(*r, *attempt)
+				if err != nil {
+					return err
+				}
+				r.ConstructionRounds = append(r.ConstructionRounds, round)
+				r.Phase = domain.PhaseConstruction
+				r.Status = domain.StatusPending
+			} else {
+				r.Phase = domain.PhaseVerification
+				r.Status = domain.StatusBlocked
+			}
+		default:
+			r.Phase = domain.PhaseVerification
+			r.Status = domain.StatusBlocked
+		}
+		r.Revision++
+		r.UpdatedAt = s.Now().UTC()
+		return nil
+	})
+	if err != nil {
+		return domain.Run{}, domain.VerificationReport{}, err
+	}
+	return updatedRun, report, nil
+}
