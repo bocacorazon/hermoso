@@ -29,6 +29,7 @@ const (
 	StatusReleased             RunStatus = "released"
 	StatusCancelled            RunStatus = "cancelled"
 	StatusAwaitingJudgment     RunStatus = "awaiting_judgment"
+	StatusAwaitingRemediation  RunStatus = "awaiting_remediation"
 )
 
 type Run struct {
@@ -477,7 +478,7 @@ func statusAllowed(phase Phase, status RunStatus) bool {
 	case PhaseDesign:
 		return status == StatusPending || status == StatusInProgress || status == StatusAwaitingApproval || status == StatusCompleted
 	case PhaseConstruction:
-		return status == StatusPending || status == StatusInProgress || status == StatusCompleted || status == StatusAwaitingVerification
+		return status == StatusPending || status == StatusInProgress || status == StatusCompleted || status == StatusAwaitingVerification || status == StatusAwaitingRemediation
 	case PhaseVerification:
 		return status == StatusPending || status == StatusInProgress || status == StatusCompleted || status == StatusAwaitingRelease || status == StatusAwaitingJudgment
 	case PhaseRelease:
@@ -517,7 +518,8 @@ var legalTransitions = map[lifecycleState]map[lifecycleState]struct{}{
 	{PhaseConstruction, StatusAwaitingVerification}: {
 		{PhaseVerification, StatusPending}: {}, {PhaseVerification, StatusInProgress}: {},
 		{PhaseVerification, StatusAwaitingJudgment}: {},
-		{PhaseConstruction, StatusPending}: {}, {PhaseVerification, StatusBlocked}: {},
+		{PhaseConstruction, StatusPending}: {}, {PhaseConstruction, StatusAwaitingRemediation}: {},
+		{PhaseVerification, StatusBlocked}: {},
 		{PhaseConstruction, StatusCancelled}: {},
 	},
 	{PhaseVerification, StatusPending}: {
@@ -531,6 +533,11 @@ var legalTransitions = map[lifecycleState]map[lifecycleState]struct{}{
 		{PhaseVerification, StatusInProgress}: {}, {PhaseVerification, StatusBlocked}: {},
 		{PhaseVerification, StatusAwaitingRelease}: {}, {PhaseVerification, StatusCancelled}: {},
 		{PhaseConstruction, StatusPending}: {},
+		{PhaseConstruction, StatusAwaitingRemediation}: {},
+	},
+	{PhaseConstruction, StatusAwaitingRemediation}: {
+		{PhaseConstruction, StatusPending}: {}, {PhaseConstruction, StatusBlocked}: {},
+		{PhaseConstruction, StatusCancelled}: {},
 	},
 	{PhaseVerification, StatusBlocked}: {
 		{PhaseVerification, StatusInProgress}: {}, {PhaseConstruction, StatusAwaitingVerification}: {},
