@@ -2,7 +2,8 @@
 
 ## Build and inspect the current CLI
 
-Hermoso currently requires Go 1.26 or newer.
+Hermoso requires Go 1.26 or newer. Repository-model builds use Tree-sitter and
+therefore require CGO and a working C compiler.
 
 ```sh
 go test ./...
@@ -18,14 +19,19 @@ scripts/hermoso-doctor.sh --static
 ```sh
 hermoso help
 hermoso version [--json]
-hermoso schema <feature-design|work-graph|phase-result> [--json]
-hermoso validate <feature-design|work-graph|phase-result> <path> <project-id> <feature-id> <run-id> <repository> [--json]
+hermoso schema <feature-design|feature-verification-contract|work-graph|phase-result> [--json]
+hermoso validate <feature-design|feature-verification-contract|work-graph|phase-result> <path> <project-id> <feature-id> <run-id> <repository> [--json]
 hermoso init <repository> [--json]
 hermoso start <feature-id> <repository> [--json]
 hermoso status <repository> [--json]
 hermoso context <project-id> <feature-id> <run-id> <repository> [--json]
+hermoso model build <project-id> <repository> [--revision <commit>] [--scip <path>] [--json]
+hermoso model status <project-id> <repository> [--json]
+hermoso model query <project-id> <repository> <orientation|task|impact|evidence> [query-or-node ...] [--budget <bytes>] [--json]
+hermoso model explain <project-id> <repository> <node-id> [--budget <bytes>] [--json]
 hermoso design put <project-id> <feature-id> <run-id> <repository> <path> [--json]
-hermoso approve design <project-id> <feature-id> <run-id> <repository> <revision> <hash> <actor> [comment] [--json]
+hermoso verification put <project-id> <feature-id> <run-id> <repository> <path> [--json]
+hermoso approve design <project-id> <feature-id> <run-id> <repository> <package-revision> <package-hash> <actor> [comment] [--json]
 hermoso graph put <project-id> <feature-id> <run-id> <repository> <path> [--json]
 hermoso construction prepare <project-id> <feature-id> <run-id> <repository> <profile-path> [--json]
 hermoso construction ready <project-id> <feature-id> <run-id> <repository> [--json]
@@ -36,6 +42,7 @@ hermoso work block <project-id> <feature-id> <run-id> <repository> <work-item-id
 hermoso resume <project-id> <feature-id> <run-id> <repository> [--json]
 hermoso construction integrate <project-id> <feature-id> <run-id> <repository> [check ...] [--json]
 hermoso result put <project-id> <feature-id> <run-id> <repository> <phase-result-path> [--json]
+hermoso verification run <project-id> <feature-id> <run-id> <repository> [--json]
 ```
 
 `schema` emits the live versioned JSON schema. `validate` checks JSON decoding,
@@ -54,8 +61,8 @@ identity from cwd or conversation. `context` returns the canonical
 when its context differs from persisted project/run state.
 
 `hermoso help` is authoritative. The command list above intentionally contains
-only current commands; `verify`, `release`, `setup skills`, and profile
-management are not available.
+only current commands; release, skill setup, and profile management are not
+available.
 
 ## One-time skill setup
 
@@ -100,26 +107,38 @@ The TUI-first flow is:
 2. **Start.** Start a feature run. Hermoso persists a pending
    design-phase run; Hermes will gather the objective and invoke the design
    skill.
-3. **Design.** Persist with `design put`; Hermoso computes the canonical
-   content hash. A changed contract must increment its revision.
-4. **Approve.** `approve design` records the exact current revision and hash.
-5. **Construct.** Persist the acyclic graph with `graph put`, then use
+3. **Model and design.** Build/query a fresh spine snapshot. Persist the v2
+   design with stable requirements, criteria, vocabulary, and surfaces.
+4. **Verification contract.** A separate author ingests the hidden hybrid
+   contract and assets with `verification put`.
+5. **Approve.** `approve design` records the exact complete package
+   revision/hash.
+6. **Construct.** Persist the traceable acyclic graph with `graph put`, then use
    `construction prepare` to create managed workspaces and compile the plan.
-6. **Dispatch.** `construction ready` emits only create-ready card specs.
+7. **Dispatch.** `construction ready` emits only create-ready card specs and
+   excludes hidden verification content.
    Hermes creates them externally with each card's idempotency key and records
    returned IDs immediately with `task bind`.
-7. **Collect.** Results and evidence are validated and attached to the run.
+8. **Collect.** Results and evidence are validated and attached to the run.
    Dependent tasks become ready only after their parents complete.
-8. **Complete or block.** Integrate branches, then persist the construction
+9. **Complete or block.** Integrate branches, then persist the construction
    result. A completed result transitions to `awaiting_verification`.
+10. **Verify.** `verification run` evaluates the exact candidate read-only and
+   persists its report. One first-failure remediation round is automatic; a
+   second failure blocks.
+11. **Publish.** A pass commits only approved Gherkin, refreshes the spine with
+   stable scenario links, and transitions to `awaiting_release`.
 
 ## Recovery, blockers, and safe retries
 
 A blocked `phase-result` must contain at least one unresolved blocker. Hermes
 shows those blockers to the developer; Hermoso preserves the run state and does
 not treat a blocked phase as completed. After the external condition is fixed,
-`resume` transitions the same construction run back to in-progress and
-continues from durable state rather than creating a replacement run.
+`resume` transitions blocked construction back to in-progress and continues
+from durable state rather than creating a replacement run. For a blocked or
+inconclusive verifier infrastructure incident, it archives the report and
+returns the same semantic verification attempt to `awaiting_verification`.
+Failed behavioral judgments remain subject to the one-remediation-round rule.
 
 Recovery rules:
 
@@ -137,12 +156,17 @@ Recovery rules:
    continues the recorded merge and does not discard the resolution.
 6. For a failed integration check, fix and commit the relevant managed work,
    run `resume`, and retry integration with the same checks.
-7. Treat corrupt/incompatible state as an operator incident. Preserve the
+7. For a blocked or inconclusive verification incident, correct the external
+   condition, run `resume`, then retry `verification run`. The incident report
+   remains in run history and does not consume attempt 1 or 2.
+8. If post-pass publication is blocked, correct the external condition and run
+   `resume`. Hermoso validates any existing publication commit against the
+   verified candidate and allowlist before completing the spine refresh.
+9. Treat corrupt/incompatible state as an operator incident. Preserve the
    repository and `.hermoso` directory for diagnosis rather than reinitializing.
 
-## Future verification and release
+## Verification and release boundary
 
-`awaiting_verification` is the delivered construction boundary. Future
-verification will evaluate the persisted construction result and evidence, then
-produce an explicit verdict. Future release will require that verdict and
-record promotion/release evidence. No current command performs either phase.
+Verification is implemented through `verification run`; see
+[Feature verification contracts](verification-contracts.md). Release
+promotion remains future work and begins only from `awaiting_release`.

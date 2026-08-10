@@ -20,6 +20,9 @@ type WorkItem struct {
 	Title                string   `json:"title"`
 	Prompt               string   `json:"prompt"`
 	AcceptanceCriteria   []string `json:"acceptance_criteria"`
+	RequirementIDs       []string `json:"requirement_ids"`
+	CriterionIDs         []string `json:"acceptance_criterion_ids"`
+	SurfaceIDs           []string `json:"surface_ids"`
 	Parents              []string `json:"parents,omitempty"`
 	Worker               Worker   `json:"worker"`
 	ChangedSurfaces      []string `json:"expected_changed_surfaces,omitempty"`
@@ -58,6 +61,9 @@ func (g WorkGraph) Validate() error {
 		validateRequired(path+".title", item.Title, &errs)
 		validateRequired(path+".prompt", item.Prompt, &errs)
 		validateStringList(path+".acceptance_criteria", item.AcceptanceCriteria, true, &errs)
+		validateStringList(path+".requirement_ids", item.RequirementIDs, true, &errs)
+		validateStringList(path+".acceptance_criterion_ids", item.CriterionIDs, true, &errs)
+		validateStringList(path+".surface_ids", item.SurfaceIDs, true, &errs)
 		validateWorker(path+".worker", item.Worker, &errs)
 		validateStringList(path+".expected_changed_surfaces", item.ChangedSurfaces, false, &errs)
 		validateStringList(path+".validation_commands", item.ValidationCommands, false, &errs)

@@ -234,6 +234,38 @@ func TestPathAndBranchValidationRejectEscapes(t *testing.T) {
 	}
 }
 
+func TestValidateAllowedCommitAcceptsOnlyDirectAllowlistedPublication(t *testing.T) {
+	t.Parallel()
+
+	repo := testutil.NewRepository(t)
+	manager := newTestManager(t, repo)
+	feature, err := manager.Feature(context.Background(), "run-1", "feature-1", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := manager.CurrentCommit(feature)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const path = "features/feature.feature"
+	writeFile(t, feature.Path, path, "Feature: Verified behavior\n")
+	publication, err := manager.CommitAllowedFiles(
+		context.Background(), feature, []string{path}, "publish verified behavior",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := manager.ValidateAllowedCommit(feature, parent, []string{path})
+	if err != nil || got != publication {
+		t.Fatalf("validated commit = %q, %v; want %q", got, err, publication)
+	}
+
+	commitFile(t, feature.Path, "unexpected.txt", "unexpected\n", "unexpected change")
+	if _, err := manager.ValidateAllowedCommit(feature, parent, []string{path}); err == nil {
+		t.Fatal("non-direct publication commit was accepted")
+	}
+}
+
 func TestIntegrationRetryResumesConflictOnSecondSource(t *testing.T) {
 	t.Parallel()
 	repo := testutil.NewRepository(t)

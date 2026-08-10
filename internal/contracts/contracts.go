@@ -15,9 +15,10 @@ import (
 type Kind string
 
 const (
-	FeatureDesign Kind = "feature-design"
-	WorkGraph     Kind = "work-graph"
-	PhaseResult   Kind = "phase-result"
+	FeatureDesign               Kind = "feature-design"
+	FeatureVerificationContract Kind = "feature-verification-contract"
+	WorkGraph                   Kind = "work-graph"
+	PhaseResult                 Kind = "phase-result"
 )
 
 var ErrUnknownKind = errors.New("unknown contract kind")
@@ -25,7 +26,7 @@ var ErrUnknownKind = errors.New("unknown contract kind")
 func ParseKind(value string) (Kind, error) {
 	kind := Kind(value)
 	switch kind {
-	case FeatureDesign, WorkGraph, PhaseResult:
+	case FeatureDesign, FeatureVerificationContract, WorkGraph, PhaseResult:
 		return kind, nil
 	default:
 		return "", fmt.Errorf("%w %q", ErrUnknownKind, value)
@@ -37,6 +38,8 @@ func Schema(kind Kind) ([]byte, error) {
 	switch kind {
 	case FeatureDesign:
 		schema = featureDesignSchema()
+	case FeatureVerificationContract:
+		schema = featureVerificationContractSchema()
 	case WorkGraph:
 		schema = workGraphSchema()
 	case PhaseResult:
@@ -65,6 +68,8 @@ func ValidateForContext(kind Kind, data []byte, expected domain.ContextRef) erro
 	switch value := contract.(type) {
 	case *domain.FeatureDesign:
 		actual = value.Context
+	case *domain.FeatureVerificationContract:
+		actual = value.Context
 	case *domain.WorkGraph:
 		actual = value.Context
 	case *domain.PhaseResult:
@@ -84,6 +89,8 @@ func decode(kind Kind, data []byte) (interface{ Validate() error }, error) {
 	switch kind {
 	case FeatureDesign:
 		contract = &domain.FeatureDesign{}
+	case FeatureVerificationContract:
+		contract = &domain.FeatureVerificationContract{}
 	case WorkGraph:
 		contract = &domain.WorkGraph{}
 	case PhaseResult:

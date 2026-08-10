@@ -836,5 +836,46 @@ func (s Service) JudgeVerification(
 	if err != nil {
 		return domain.Run{}, domain.VerificationReport{}, err
 	}
+
+	// On pass, run the publication flow — same as RunVerification.
+	if report.Verdict == domain.VerificationPass {
+		hasGherkin := false
+		for _, artifact := range updatedRun.Design.Verification.Artifacts {
+			if artifact.Kind == "gherkin" {
+				hasGherkin = true
+				break
+			}
+		}
+		if hasGherkin {
+			updatedRun, err = s.publishPassingGherkin(ctx, execution, updatedRun, *attempt)
+			if err != nil {
+				blocked, blockErr := s.Store.UpdateRun(ctx, execution, func(current *domain.Run) error {
+					current.Phase = domain.PhaseVerification
+					current.Status = domain.StatusBlocked
+					current.VerificationBlocker = "Gherkin publication failed: " + err.Error()
+					current.Revision++
+					current.UpdatedAt = s.Now().UTC()
+					return nil
+				})
+				if blockErr != nil {
+					return domain.Run{}, report, errors.Join(err, blockErr)
+				}
+				return blocked, report, err
+			}
+		} else {
+			// No gherkin artifacts to publish — transition directly to awaiting_release.
+			updatedRun, err = s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+				r.Phase = domain.PhaseVerification
+				r.Status = domain.StatusAwaitingRelease
+				r.VerificationBlocker = ""
+				r.Revision++
+				r.UpdatedAt = s.Now().UTC()
+				return nil
+			})
+			if err != nil {
+				return domain.Run{}, report, err
+			}
+		}
+	}
 	return updatedRun, report, nil
 }

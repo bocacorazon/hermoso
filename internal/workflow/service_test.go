@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bocacorazon/hermoso/internal/digest"
 	"github.com/bocacorazon/hermoso/internal/dispatch"
 	"github.com/bocacorazon/hermoso/internal/domain"
 	"github.com/bocacorazon/hermoso/internal/repository"
@@ -26,16 +27,18 @@ func TestDesignConstructionFakeKanbanEndToEnd(t *testing.T) {
 	t.Parallel()
 	repo, service, execution, profile := setup(t, "feature-flow")
 	board := newFakeKanban()
-	design := testDesign(execution, 1, "Build flow")
+	design := testDesign(t, execution, 1, "Build flow")
 	run, changed, err := service.PutDesign(context.Background(), execution, encode(t, design))
 	if err != nil || !changed {
 		t.Fatalf("put design: changed=%v err=%v", changed, err)
 	}
-	hash := run.Design.Hash
 	if _, changed, err := service.PutDesign(context.Background(), execution, encode(t, design)); err != nil || changed {
 		t.Fatalf("idempotent design retry: changed=%v err=%v", changed, err)
 	}
-	run, changed, err = service.ApproveDesign(context.Background(), execution, 1, hash, "developer", "")
+	run = putVerificationPackage(t, service, execution, run)
+	run, changed, err = service.ApproveDesign(
+		context.Background(), execution, run.Design.Revision, run.Design.PackageHash, "developer", "",
+	)
 	if err != nil || !changed || run.Phase != domain.PhaseConstruction {
 		t.Fatalf("approve: run=%#v changed=%v err=%v", run, changed, err)
 	}
@@ -113,8 +116,9 @@ func TestDesignConstructionFakeKanbanEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	run, integration, _, err := service.Integrate(context.Background(), execution, []string{"git status --porcelain"})
-	if err != nil || integration.Block != nil || run.Construction.IntegratedAt == nil ||
-		run.Construction.IntegratedFeatureCommit == "" || len(run.Construction.IntegratedLeaves) != 1 {
+	construction := run.LatestConstruction()
+	if err != nil || integration.Block != nil || construction.IntegratedAt == nil ||
+		construction.IntegratedFeatureCommit == "" || len(construction.IntegratedLeaves) != 1 {
 		t.Fatalf("integrate: result=%#v run=%#v err=%v", integration, run, err)
 	}
 	result := testResult(execution, domain.ResultCompleted, nil)
@@ -127,29 +131,325 @@ func TestDesignConstructionFakeKanbanEndToEnd(t *testing.T) {
 	}
 }
 
+func TestConstructionDispatchDoesNotLeakVerificationContract(t *testing.T) {
+	t.Parallel()
+	_, service, execution, profile := setup(t, "feature-nondisclosure")
+	run, _, err := service.PutDesign(
+		context.Background(), execution, encode(t, testDesign(t, execution, 1, "Keep verifier assets hidden")),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run = putVerificationPackage(t, service, execution, run)
+	if _, _, err := service.ApproveDesign(
+		context.Background(), execution, run.Design.Revision, run.Design.PackageHash, "developer", "",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.PutGraph(
+		context.Background(), execution,
+		encode(t, testGraph(execution, []domain.WorkItem{testItem("root", nil)})),
+	); err != nil {
+		t.Fatal(err)
+	}
+	run, plan, _, err := service.Prepare(context.Background(), execution, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hidden := range []string{
+		"scenario-feature",
+		"judgment-feature",
+		"hidden/features/feature.feature",
+		"hermoso-hidden-verifier",
+		strings.TrimPrefix(run.Design.VerificationHash, "sha256:"),
+		strings.TrimPrefix(run.Design.ArtifactRootHash, "sha256:"),
+	} {
+		if strings.Contains(string(projected), hidden) {
+			t.Errorf("construction projection leaked %q: %s", hidden, projected)
+		}
+	}
+	for _, item := range run.LatestConstruction().Items {
+		if _, err := os.Stat(filepath.Join(item.Workspace.Path, "hidden", "features", "feature.feature")); !os.IsNotExist(err) {
+			t.Errorf("verification artifact exists in build worktree %q: %v", item.Workspace.Path, err)
+		}
+	}
+}
+
+func TestVerificationPassPublishesGherkinAndRefreshesModel(t *testing.T) {
+	t.Parallel()
+	repo, service, execution, profile := setupVerificationRun(t, "verification-pass", false)
+	run := completeVerificationCandidate(t, service, execution, profile)
+
+	run, report, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict != domain.VerificationPass || run.Status != domain.StatusAwaitingRelease {
+		t.Fatalf("verification report=%#v run=%#v", report, run)
+	}
+	if run.Publication == nil || run.Publication.VerifiedCommit != report.CandidateCommit ||
+		run.Publication.PublicationCommit == report.CandidateCommit {
+		t.Fatalf("publication=%#v report=%#v", run.Publication, report)
+	}
+	if data, err := os.ReadFile(
+		filepath.Join(run.LatestConstruction().Feature.Path, "features", "feature.feature"),
+	); err != nil || !strings.Contains(string(data), "@scenario:scenario-feature") {
+		t.Fatalf("published Gherkin=%q err=%v", data, err)
+	}
+	_, snapshot, err := service.Store.CurrentModel(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundScenario := false
+	for _, node := range snapshot.Nodes {
+		if node.ID == "scenario:scenario-feature" && node.EpistemicStatus == "stable" {
+			foundScenario = true
+		}
+	}
+	if !foundScenario {
+		t.Fatal("refreshed repository model has no stable published scenario")
+	}
+	if !gitAncestor(repo, report.CandidateCommit, run.Publication.PublicationCommit) {
+		t.Fatal("publication commit does not descend from verified candidate")
+	}
+}
+
+func TestResumeCompletesPartiallyRecordedGherkinPublication(t *testing.T) {
+	t.Parallel()
+
+	_, service, execution, profile := setupVerificationRun(t, "verification-publication-resume", false)
+	completeVerificationCandidate(t, service, execution, profile)
+	run, report, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicationCommit := run.Publication.PublicationCommit
+	run.Publication = nil
+	run.Phase = domain.PhaseVerification
+	run.Status = domain.StatusBlocked
+	run.VerificationBlocker = "simulated failure after publication commit"
+	run.Revision++
+	run.UpdatedAt = service.Now().UTC()
+	data, err := json.MarshalIndent(run, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runPath := filepath.Join(
+		service.Store.Repository().Root, ".hermoso", "runs", execution.RunID, "run.json",
+	)
+	if err := os.WriteFile(runPath, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if run.Publication != nil || run.Status != domain.StatusBlocked {
+		t.Fatalf("partial publication state=%#v", run)
+	}
+
+	run, changed, err := service.Resume(context.Background(), execution)
+	if err != nil || !changed {
+		t.Fatalf("resume publication: changed=%v err=%v", changed, err)
+	}
+	if run.Status != domain.StatusAwaitingRelease || run.Publication == nil ||
+		run.Publication.PublicationCommit != publicationCommit ||
+		run.Publication.VerifiedCommit != report.CandidateCommit ||
+		run.VerificationBlocker != "" {
+		t.Fatalf("resumed publication run=%#v", run)
+	}
+}
+
+func TestVerificationFailureCreatesOneRemediationRound(t *testing.T) {
+	t.Parallel()
+	_, service, execution, profile := setupVerificationRun(t, "verification-remediation", true)
+	completeVerificationCandidate(t, service, execution, profile)
+
+	run, report, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict != domain.VerificationFail || run.Phase != domain.PhaseConstruction ||
+		run.Status != domain.StatusPending || len(run.ConstructionRounds) != 2 {
+		t.Fatalf("first failure report=%#v run=%#v", report, run)
+	}
+	remediation := run.LatestConstruction()
+	if remediation.Kind != "remediation" || remediation.Remediation == nil ||
+		remediation.SourceHash != run.VerificationAttempts[0].ReportHash {
+		t.Fatalf("remediation round=%#v", remediation)
+	}
+	projected, err := json.Marshal(remediation.Graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hidden := range []string{"scenario-feature", "judgment-feature", "hidden/features/feature.feature"} {
+		if strings.Contains(string(projected), hidden) {
+			t.Errorf("remediation graph leaked %q: %s", hidden, projected)
+		}
+	}
+
+	run, _, _, err = service.Prepare(context.Background(), execution, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.BindTask(context.Background(), execution, "remediation-1", "task-remediation"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.StartWork(context.Background(), execution, "remediation-1"); err != nil {
+		t.Fatal(err)
+	}
+	item := itemState(t, service, execution, "remediation-1")
+	if err := os.WriteFile(filepath.Join(item.Workspace.Path, "fixed.txt"), []byte("fixed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitAt(t, item.Workspace.Path, "add", "fixed.txt")
+	gitAt(t, item.Workspace.Path, "commit", "-m", "fix verified behavior")
+	if _, _, err := service.FinishWork(
+		context.Background(), execution, "remediation-1", domain.WorkCompleted,
+		testEvidence(execution, "remediation-done"), "",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := service.Integrate(context.Background(), execution, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.PutResult(
+		context.Background(), execution,
+		encode(t, testResult(execution, domain.ResultCompleted, nil)),
+	); err != nil {
+		t.Fatal(err)
+	}
+	run, report, err = service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Attempt != 2 || report.Verdict != domain.VerificationPass ||
+		len(run.ConstructionRounds) != 2 || len(run.VerificationAttempts) != 2 ||
+		run.Status != domain.StatusAwaitingRelease {
+		t.Fatalf("second verification report=%#v run=%#v", report, run)
+	}
+}
+
+func TestSecondVerificationFailureBlocksWithoutThirdRound(t *testing.T) {
+	t.Parallel()
+	_, service, execution, profile := setupVerificationRun(t, "verification-second-fail", true)
+	completeVerificationCandidate(t, service, execution, profile)
+	run, _, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := service.Prepare(context.Background(), execution, profile); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.BindTask(context.Background(), execution, "remediation-1", "task-remediation"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.StartWork(context.Background(), execution, "remediation-1"); err != nil {
+		t.Fatal(err)
+	}
+	item := itemState(t, service, execution, "remediation-1")
+	gitAt(t, item.Workspace.Path, "commit", "--allow-empty", "-m", "ineffective remediation")
+	if _, _, err := service.FinishWork(
+		context.Background(), execution, "remediation-1", domain.WorkCompleted,
+		testEvidence(execution, "ineffective-remediation"), "",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := service.Integrate(context.Background(), execution, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.PutResult(
+		context.Background(), execution,
+		encode(t, testResult(execution, domain.ResultCompleted, nil)),
+	); err != nil {
+		t.Fatal(err)
+	}
+	run, report, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Attempt != 2 || report.Verdict != domain.VerificationFail ||
+		run.Status != domain.StatusBlocked || len(run.ConstructionRounds) != 2 {
+		t.Fatalf("second failure report=%#v run=%#v prior=%#v", report, run, run)
+	}
+}
+
+func TestVerificationBlocksWhenCommandMutatesCandidateWorktree(t *testing.T) {
+	t.Parallel()
+	repo, service, execution, profile := setupVerificationRun(t, "verification-mutation", false)
+	repo.Write("api_test.go", `package verification
+
+import (
+	"os"
+	"testing"
+)
+
+func TestFeature(t *testing.T) {
+	FeatureHandler()
+	if err := os.WriteFile("verification-mutated.txt", []byte("mutation"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+`)
+	gitAt(t, repo.Root, "add", "api_test.go")
+	gitAt(t, repo.Root, "commit", "-m", "add mutating verifier fixture")
+	if _, _, err := service.Store.PutModelSnapshot(
+		context.Background(), testutil.ModelSnapshot(t, execution),
+	); err != nil {
+		t.Fatal(err)
+	}
+	completeVerificationCandidate(t, service, execution, profile)
+
+	run, report, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict != domain.VerificationBlocked || run.Status != domain.StatusBlocked ||
+		len(run.ConstructionRounds) != 1 {
+		t.Fatalf("mutation report=%#v run=%#v", report, run)
+	}
+	if !strings.Contains(strings.Join(report.Findings, " "), "mutated the candidate worktree") {
+		t.Fatalf("mutation finding missing: %#v", report.Findings)
+	}
+	run, changed, err := service.Resume(context.Background(), execution)
+	if err != nil || !changed {
+		t.Fatalf("resume blocked verification: changed=%v err=%v", changed, err)
+	}
+	expectedReportHash, err := digest.JSON(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Phase != domain.PhaseConstruction || run.Status != domain.StatusAwaitingVerification ||
+		len(run.VerificationAttempts) != 0 || len(run.VerificationIncidents) != 1 ||
+		run.VerificationIncidents[0].ReportHash != expectedReportHash {
+		t.Fatalf("resumed verification run=%#v", run)
+	}
+}
+
 func TestApprovalHashInvalidationAndContextIsolation(t *testing.T) {
 	t.Parallel()
 	_, serviceA, contextA, _ := setup(t, "feature-a")
 	_, serviceB, contextB, _ := setup(t, "feature-b")
 
-	first := testDesign(contextA, 1, "First")
+	first := testDesign(t, contextA, 1, "First")
 	run, _, err := serviceA.PutDesign(context.Background(), contextA, encode(t, first))
 	if err != nil {
 		t.Fatal(err)
 	}
+	run = putVerificationPackage(t, serviceA, contextA, run)
 
 	if _, _, err := serviceA.ApproveDesign(context.Background(), contextA, 1, "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "dev", ""); err == nil {
 		t.Fatal("stale hash approval accepted")
 	}
-	if _, _, err := serviceA.ApproveDesign(context.Background(), contextA, 1, run.Design.Hash, "dev", ""); err != nil {
+	if _, _, err := serviceA.ApproveDesign(context.Background(), contextA, run.Design.Revision, run.Design.PackageHash, "dev", ""); err != nil {
 		t.Fatal(err)
 	}
-	revised := testDesign(contextA, 2, "Revised")
+	revised := testDesign(t, contextA, 2, "Revised")
 	run, changed, err := serviceA.PutDesign(context.Background(), contextA, encode(t, revised))
 	if err != nil || !changed || run.Design.Approval != nil || run.Status != domain.StatusAwaitingApproval {
 		t.Fatalf("revision did not invalidate approval: run=%#v changed=%v err=%v", run, changed, err)
 	}
-	if _, _, err := serviceA.ApproveDesign(context.Background(), contextA, 1, run.Design.Hash, "dev", ""); err == nil {
+	if _, _, err := serviceA.ApproveDesign(context.Background(), contextA, run.Design.Revision-1, run.Design.PackageHash, "dev", ""); err == nil {
 		t.Fatal("old revision approval accepted after design change")
 	}
 	if _, _, err := serviceB.PutDesign(context.Background(), contextB, encode(t, first)); err == nil {
@@ -159,6 +459,21 @@ func TestApprovalHashInvalidationAndContextIsolation(t *testing.T) {
 	mismatch.FeatureID = contextB.FeatureID
 	if _, _, err := serviceA.PutDesign(context.Background(), mismatch, encode(t, first)); err == nil {
 		t.Fatal("mismatched canonical context accepted")
+	}
+}
+
+func TestPutDesignRejectsStaleRepositoryModelSnapshot(t *testing.T) {
+	t.Parallel()
+	repo, service, execution, _ := setup(t, "stale-model")
+	design := testDesign(t, execution, 1, "Reject stale model")
+	repo.Write("new-source.go", "package stale\n")
+	gitAt(t, repo.Root, "add", "new-source.go")
+	gitAt(t, repo.Root, "commit", "-m", "move repository head")
+
+	if _, _, err := service.PutDesign(
+		context.Background(), execution, encode(t, design),
+	); err == nil || !strings.Contains(err.Error(), "repository model snapshot is stale") {
+		t.Fatalf("stale model error=%v", err)
 	}
 }
 
@@ -184,6 +499,9 @@ func TestSameRepositoryFeatureAndRunContextsRemainIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, _, err := store.PutModelSnapshot(context.Background(), testutil.ModelSnapshot(t, runA.Context)); err != nil {
+		t.Fatal(err)
+	}
 	manager, err := repository.NewManager(repo.Root, filepath.Join(repo.Root, ".hermoso", "worktrees"), "hermoso")
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +509,7 @@ func TestSameRepositoryFeatureAndRunContextsRemainIsolated(t *testing.T) {
 	service := Service{Store: store, Manager: manager, Now: func() time.Time { return testTime.Add(time.Minute) }}
 
 	for _, execution := range []domain.ContextRef{runA.Context, runB.Context, runC.Context} {
-		if _, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(execution, 1, execution.RunID))); err != nil {
+		if _, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(t, execution, 1, execution.RunID))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -200,17 +518,17 @@ func TestSameRepositoryFeatureAndRunContextsRemainIsolated(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if persisted.Design.Contract.Feature.Objective != execution.RunID {
-			t.Fatalf("context %s read another run's design: %#v", execution.RunID, persisted.Design.Contract)
+		if persisted.Design.Feature.Feature.Objective != execution.RunID {
+			t.Fatalf("context %s read another run's design: %#v", execution.RunID, persisted.Design.Feature)
 		}
 	}
 
-	crossRun := testDesign(runA.Context, 2, "wrong run")
+	crossRun := testDesign(t, runA.Context, 2, "wrong run")
 	crossRun.Context.RunID = runB.Context.RunID
 	if _, _, err := service.PutDesign(context.Background(), runA.Context, encode(t, crossRun)); err == nil {
 		t.Fatal("cross-run design accepted")
 	}
-	crossFeature := testDesign(runA.Context, 2, "wrong feature")
+	crossFeature := testDesign(t, runA.Context, 2, "wrong feature")
 	crossFeature.Context.FeatureID = runC.Context.FeatureID
 	if _, _, err := service.PutDesign(context.Background(), runA.Context, encode(t, crossFeature)); err == nil {
 		t.Fatal("cross-feature design accepted")
@@ -220,11 +538,14 @@ func TestSameRepositoryFeatureAndRunContextsRemainIsolated(t *testing.T) {
 func TestBlockResumePreservesConflictResolution(t *testing.T) {
 	t.Parallel()
 	_, service, execution, profile := setup(t, "feature-conflict")
-	run, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(execution, 1, "Conflict")))
+	run, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(t, execution, 1, "Conflict")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.ApproveDesign(context.Background(), execution, 1, run.Design.Hash, "dev", ""); err != nil {
+	run = putVerificationPackage(t, service, execution, run)
+	if _, _, err := service.ApproveDesign(
+		context.Background(), execution, run.Design.Revision, run.Design.PackageHash, "dev", "",
+	); err != nil {
 		t.Fatal(err)
 	}
 	graph := testGraph(execution, []domain.WorkItem{
@@ -284,11 +605,14 @@ func TestBlockResumePreservesConflictResolution(t *testing.T) {
 func TestBlockedWorkResumesWithBindingAndCompletionRetryIntact(t *testing.T) {
 	t.Parallel()
 	_, service, execution, profile := setup(t, "feature-blocked")
-	run, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(execution, 1, "Blocked work")))
+	run, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(t, execution, 1, "Blocked work")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.ApproveDesign(context.Background(), execution, 1, run.Design.Hash, "dev", ""); err != nil {
+	run = putVerificationPackage(t, service, execution, run)
+	if _, _, err := service.ApproveDesign(
+		context.Background(), execution, run.Design.Revision, run.Design.PackageHash, "dev", "",
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := service.PutGraph(context.Background(), execution, encode(t, testGraph(execution, []domain.WorkItem{testItem("root", nil)}))); err != nil {
@@ -333,11 +657,14 @@ func TestBlockedWorkResumesWithBindingAndCompletionRetryIntact(t *testing.T) {
 
 func TestPreparePersistsCanonicalProfilePathAcrossWorkingDirectoryChanges(t *testing.T) {
 	repo, service, execution, _ := setup(t, "profile-recovery")
-	run, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(execution, 1, "Profile recovery")))
+	run, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(t, execution, 1, "Profile recovery")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.ApproveDesign(context.Background(), execution, 1, run.Design.Hash, "dev", ""); err != nil {
+	run = putVerificationPackage(t, service, execution, run)
+	if _, _, err := service.ApproveDesign(
+		context.Background(), execution, run.Design.Revision, run.Design.PackageHash, "dev", "",
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := service.PutGraph(context.Background(), execution, encode(t, testGraph(execution, []domain.WorkItem{testItem("root", nil)}))); err != nil {
@@ -355,8 +682,8 @@ func TestPreparePersistsCanonicalProfilePathAcrossWorkingDirectoryChanges(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !filepath.IsAbs(run.Construction.ProfilePath) {
-		t.Fatalf("persisted profile path = %q, want absolute", run.Construction.ProfilePath)
+	if !filepath.IsAbs(run.LatestConstruction().ProfilePath) {
+		t.Fatalf("persisted profile path = %q, want absolute", run.LatestConstruction().ProfilePath)
 	}
 	if err := os.Chdir(filepath.Dir(repo.Root)); err != nil {
 		t.Fatal(err)
@@ -424,10 +751,10 @@ func TestIntegrationAndResultRejectCommitDrift(t *testing.T) {
 		drift func(domain.Run)
 	}{
 		{"leaf", func(run domain.Run) {
-			gitAt(t, run.Construction.Items[0].Workspace.Path, "commit", "--allow-empty", "-m", "leaf drift")
+			gitAt(t, run.LatestConstruction().Items[0].Workspace.Path, "commit", "--allow-empty", "-m", "leaf drift")
 		}},
 		{"feature", func(run domain.Run) {
-			gitAt(t, run.Construction.Feature.Path, "commit", "--allow-empty", "-m", "feature drift")
+			gitAt(t, run.LatestConstruction().Feature.Path, "commit", "--allow-empty", "-m", "feature drift")
 		}},
 	}
 	for _, test := range tests {
@@ -452,11 +779,14 @@ func TestIntegrationAndResultRejectCommitDrift(t *testing.T) {
 
 func prepareCompletedLeaf(t *testing.T, service Service, execution domain.ContextRef, profile string) domain.Run {
 	t.Helper()
-	run, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(execution, 1, "Complete leaf")))
+	run, _, err := service.PutDesign(context.Background(), execution, encode(t, testDesign(t, execution, 1, "Complete leaf")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.ApproveDesign(context.Background(), execution, 1, run.Design.Hash, "dev", ""); err != nil {
+	run = putVerificationPackage(t, service, execution, run)
+	if _, _, err := service.ApproveDesign(
+		context.Background(), execution, run.Design.Revision, run.Design.PackageHash, "dev", "",
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := service.PutGraph(context.Background(), execution, encode(t, testGraph(execution, []domain.WorkItem{testItem("root", nil)}))); err != nil {
@@ -484,12 +814,15 @@ func TestReadyWithholdsChildWhenCompletedParentHasNoTaskBinding(t *testing.T) {
 	t.Parallel()
 
 	_, service, execution, profile := setup(t, "unbound-parent")
-	design := testDesign(execution, 1, "Verify binding readiness")
+	design := testDesign(t, execution, 1, "Verify binding readiness")
 	run, _, err := service.PutDesign(context.Background(), execution, encode(t, design))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.ApproveDesign(context.Background(), execution, design.Revision, run.Design.Hash, "developer", ""); err != nil {
+	run = putVerificationPackage(t, service, execution, run)
+	if _, _, err := service.ApproveDesign(
+		context.Background(), execution, run.Design.Revision, run.Design.PackageHash, "developer", "",
+	); err != nil {
 		t.Fatal(err)
 	}
 	graph := testGraph(execution, []domain.WorkItem{
@@ -534,6 +867,9 @@ func setup(t *testing.T, feature string) (*testutil.Repository, Service, domain.
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, _, err := store.PutModelSnapshot(context.Background(), testutil.ModelSnapshot(t, run.Context)); err != nil {
+		t.Fatal(err)
+	}
 	manager, err := repository.NewManager(repo.Root, filepath.Join(repo.Root, ".hermoso", "worktrees"), "hermoso")
 	if err != nil {
 		t.Fatal(err)
@@ -543,12 +879,117 @@ func setup(t *testing.T, feature string) (*testutil.Repository, Service, domain.
 	return repo, Service{Store: store, Manager: manager, Now: func() time.Time { return testTime.Add(time.Minute) }}, run.Context, profile
 }
 
-func testDesign(ctx domain.ContextRef, revision uint64, objective string) domain.FeatureDesign {
+func setupVerificationRun(
+	t *testing.T,
+	feature string,
+	requireFix bool,
+) (*testutil.Repository, Service, domain.ContextRef, string) {
+	t.Helper()
+	repo, service, execution, profile := setup(t, feature)
+	repo.Write("go.mod", "module example.com/verification\n\ngo 1.25\n")
+	repo.Write("api.go", "package verification\n\nfunc FeatureHandler() {}\n")
+	testSource := "package verification\n\nimport \"testing\"\n\nfunc TestFeature(t *testing.T) { FeatureHandler() }\n"
+	if requireFix {
+		testSource = `package verification
+
+import (
+	"os"
+	"testing"
+)
+
+func TestFeature(t *testing.T) {
+	FeatureHandler()
+	if _, err := os.Stat("fixed.txt"); err != nil {
+		t.Fatal("visible behavior is not fixed")
+	}
+}
+`
+	}
+	repo.Write("api_test.go", testSource)
+	gitAt(t, repo.Root, "add", "go.mod", "api.go", "api_test.go")
+	gitAt(t, repo.Root, "commit", "-m", "add verification fixture")
+	if _, _, err := service.Store.PutModelSnapshot(
+		context.Background(), testutil.ModelSnapshot(t, execution),
+	); err != nil {
+		t.Fatal(err)
+	}
+	return repo, service, execution, profile
+}
+
+func completeVerificationCandidate(
+	t *testing.T,
+	service Service,
+	execution domain.ContextRef,
+	profile string,
+) domain.Run {
+	t.Helper()
+	design := testDesign(t, execution, 1, "Verify and publish behavior")
+	design.Surfaces[0].Title = "FeatureHandler"
+	run, _, err := service.PutDesign(context.Background(), execution, encode(t, design))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run = putVerificationPackageWithCommand(t, service, execution, run, []string{"go", "test", "./..."})
+	if _, _, err := service.ApproveDesign(
+		context.Background(), execution, run.Design.Revision, run.Design.PackageHash, "developer", "",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.PutGraph(
+		context.Background(), execution,
+		encode(t, testGraph(execution, []domain.WorkItem{testItem("root", nil)})),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := service.Prepare(context.Background(), execution, profile); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.BindTask(context.Background(), execution, "root", "task-root"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.StartWork(context.Background(), execution, "root"); err != nil {
+		t.Fatal(err)
+	}
+	item := itemState(t, service, execution, "root")
+	gitAt(t, item.Workspace.Path, "commit", "--allow-empty", "-m", "complete candidate")
+	if _, _, err := service.FinishWork(
+		context.Background(), execution, "root", domain.WorkCompleted,
+		testEvidence(execution, "candidate-done"), "",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := service.Integrate(context.Background(), execution, nil); err != nil {
+		t.Fatal(err)
+	}
+	run, _, err = service.PutResult(
+		context.Background(), execution,
+		encode(t, testResult(execution, domain.ResultCompleted, nil)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+func testDesign(t *testing.T, ctx domain.ContextRef, revision uint64, objective string) domain.FeatureDesign {
+	t.Helper()
 	return domain.FeatureDesign{
 		SchemaVersion: domain.SchemaVersion, Context: ctx,
 		Producer: domain.Producer{Skill: "hermoso-design", Runtime: "test"}, Revision: revision,
-		Feature:            domain.FeatureIdentity{ID: ctx.FeatureID, Title: "Feature", Objective: objective, TargetRepository: ctx.Repository},
-		AcceptanceCriteria: []string{"Works"}, UnresolvedQuestions: []string{}, Complexity: domain.ComplexityStandard,
+		Feature:   domain.FeatureIdentity{ID: ctx.FeatureID, Title: "Feature", Objective: objective, TargetRepository: ctx.Repository},
+		BaseModel: testutil.ModelReference(testutil.ModelSnapshot(t, ctx)),
+		Requirements: []domain.Requirement{{
+			ID: "req-feature", Title: "Feature works", Statement: "The feature works.",
+			Kind: "functional", Priority: "must",
+		}},
+		AcceptanceCriteria: []domain.AcceptanceCriterion{{
+			ID: "ac-feature", Statement: "Works", RequirementIDs: []string{"req-feature"},
+		}},
+		Surfaces: []domain.FeatureSurface{{
+			ID: "surface-feature", Title: "Feature API", Kind: "api", Source: "planned",
+			Description: "Feature interaction surface.",
+		}},
+		UnresolvedQuestions: []string{}, Complexity: domain.ComplexityStandard,
 	}
 }
 
@@ -564,8 +1005,80 @@ func testItem(id string, parents []string) domain.WorkItem {
 	return domain.WorkItem{
 		ID: id, Title: id, Prompt: "Implement " + id, Parents: parents,
 		AcceptanceCriteria: []string{id + " works"},
+		RequirementIDs:     []string{"req-feature"},
+		CriterionIDs:       []string{"ac-feature"},
+		SurfaceIDs:         []string{"surface-feature"},
 		Worker:             domain.Worker{Profile: "default", Skills: []domain.SkillBinding{{Name: "hermoso-construction"}}},
 	}
+}
+
+func putVerificationPackage(
+	t *testing.T,
+	service Service,
+	execution domain.ContextRef,
+	run domain.Run,
+) domain.Run {
+	return putVerificationPackageWithCommand(
+		t, service, execution, run, []string{"hermoso-hidden-verifier"},
+	)
+}
+
+func putVerificationPackageWithCommand(
+	t *testing.T,
+	service Service,
+	execution domain.ContextRef,
+	run domain.Run,
+	command []string,
+) domain.Run {
+	t.Helper()
+	feature := []byte(`@requirement:req-feature @criterion:ac-feature @surface:surface-feature
+Feature: Verify the feature
+
+  @scenario:scenario-feature @judgment:judgment-feature
+  Scenario: Satisfy the visible feature contract
+    Given the feature is available
+    When the user exercises the feature
+    Then the feature works
+`)
+	assets := map[string][]byte{"hidden/features/feature.feature": feature}
+	contract := domain.FeatureVerificationContract{
+		SchemaVersion: domain.SchemaVersion,
+		Context:       execution,
+		Producer: domain.Producer{
+			Skill: "hermoso-verification-author", Runtime: "test",
+		},
+		Revision: 1,
+		FeatureDesign: domain.ContractReference{
+			Context: execution, Kind: "feature-design", Path: "design.json",
+			Revision: run.Design.Feature.Revision, Hash: run.Design.FeatureHash,
+		},
+		BaseModel: run.Design.Feature.BaseModel,
+		Artifacts: []domain.VerificationArtifact{{
+			ID: "artifact-feature", Kind: "gherkin", Path: "hidden/features/feature.feature",
+			ContentHash: digest.Bytes(feature), PublicationPath: "features/feature.feature",
+		}},
+		Judgments: []domain.VerificationJudgment{{
+			ID: "judgment-feature", Title: "Feature works", Modality: "bdd",
+			RequirementIDs:         []string{"req-feature"},
+			AcceptanceCriterionIDs: []string{"ac-feature"},
+			SurfaceIDs:             []string{"surface-feature"},
+			ArtifactIDs:            []string{"artifact-feature"},
+			ScenarioIDs:            []string{"scenario-feature"},
+			Execution: domain.VerificationExecution{
+				Command: command, TimeoutSeconds: 300,
+			},
+			Oracle:           domain.VerificationOracle{Type: "gherkin"},
+			RequiredEvidence: []string{"scenario result", "command output"},
+		}},
+		Aggregation: domain.VerificationAggregation{Strategy: "all_required"},
+	}
+	persisted, changed, err := service.PutVerificationContract(
+		context.Background(), execution, encode(t, contract), assets,
+	)
+	if err != nil || !changed {
+		t.Fatalf("put verification package: changed=%v err=%v", changed, err)
+	}
+	return persisted
 }
 
 func testEvidence(ctx domain.ContextRef, id string) domain.Evidence {

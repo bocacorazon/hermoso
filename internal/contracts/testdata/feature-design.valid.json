@@ -1,5 +1,5 @@
 {
-  "schema_version": "1",
+  "schema_version": "2",
   "context": {
     "schema_version": "hermoso-context/v1",
     "project_id": "project-1",
@@ -26,9 +26,57 @@
       "default_branch": "main"
     }
   },
+  "base_model": {
+    "schema_version": "hermoso-repository-model/v1",
+    "snapshot_id": "model-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "source_revision": "cccccccccccccccccccccccccccccccccccccccc",
+    "vocabulary_version": "v1"
+  },
+  "requirements": [
+    {
+      "id": "req-reject-malformed",
+      "title": "Reject malformed contracts",
+      "statement": "Hermoso rejects malformed phase contracts.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-accept-valid",
+      "title": "Accept valid contracts",
+      "statement": "Hermoso accepts valid phase contracts.",
+      "kind": "functional",
+      "priority": "must"
+    }
+  ],
   "acceptance_criteria": [
-    "Malformed contracts are rejected",
-    "Valid contracts are accepted"
+    {
+      "id": "ac-reject-malformed",
+      "statement": "Malformed contracts are rejected.",
+      "requirement_ids": ["req-reject-malformed"]
+    },
+    {
+      "id": "ac-accept-valid",
+      "statement": "Valid contracts are accepted.",
+      "requirement_ids": ["req-accept-valid"]
+    }
+  ],
+  "business_vocabulary": [
+    {
+      "id": "term-contract",
+      "term": "phase contract",
+      "definition": "A versioned handoff between Hermoso phases.",
+      "aliases": ["contract"]
+    }
+  ],
+  "interaction_surfaces": [
+    {
+      "id": "surface-schema-cli",
+      "title": "Schema CLI",
+      "kind": "cli",
+      "source": "planned",
+      "description": "The command-line contract validation surface."
+    }
   ],
   "constraints": [
     "Use the Go standard library"

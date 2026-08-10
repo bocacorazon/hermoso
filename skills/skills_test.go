@@ -9,7 +9,10 @@ import (
 	"testing"
 )
 
-var skillNames = []string{"hermoso", "hermoso-design", "hermoso-construction"}
+var skillNames = []string{
+	"hermoso", "hermoso-design", "hermoso-verification-author",
+	"hermoso-construction", "hermoso-verification",
+}
 
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
@@ -80,7 +83,10 @@ func TestDefaultProfileBindings(t *testing.T) {
 	if profile.SchemaVersion != "hermoso-profile/v1" {
 		t.Fatalf("schema version = %q", profile.SchemaVersion)
 	}
-	for _, phase := range []string{"controller", "design", "construction", "integration"} {
+	for _, phase := range []string{
+		"controller", "design", "verification_contract", "construction",
+		"integration", "verification",
+	} {
 		if profile.Phases[phase] == nil {
 			t.Errorf("missing phase %q", phase)
 		}
@@ -88,7 +94,8 @@ func TestDefaultProfileBindings(t *testing.T) {
 	content := read(t, filepath.Join(root, "profiles", "default.yaml"))
 	for _, skill := range []string{
 		"kanban-orchestrator", "test-driven-development",
-		"systematic-debugging", "spike", "hermoso-design", "hermoso-construction",
+		"systematic-debugging", "spike", "hermoso-design",
+		"hermoso-verification-author", "hermoso-construction", "hermoso-verification",
 	} {
 		if !strings.Contains(content, `"`+skill+`"`) {
 			t.Errorf("profile missing skill %q", skill)
@@ -131,11 +138,11 @@ func TestCommandLabelsMatchCurrentCLI(t *testing.T) {
 		"hermoso schema work-graph", "hermoso schema phase-result",
 		"hermoso validate feature-design", "hermoso validate work-graph",
 		"hermoso validate phase-result",
-		"hermoso design put", "hermoso approve design", "hermoso graph put",
+		"hermoso design put", "hermoso verification put", "hermoso approve design", "hermoso graph put",
 		"hermoso construction prepare", "hermoso construction ready",
 		"hermoso task bind", "hermoso work start", "hermoso work complete",
 		"hermoso work block", "hermoso construction integrate",
-		"hermoso result put", "hermoso resume",
+		"hermoso result put", "hermoso verification run", "hermoso resume",
 	} {
 		if !strings.Contains(all, current) {
 			t.Errorf("missing current command %q", current)

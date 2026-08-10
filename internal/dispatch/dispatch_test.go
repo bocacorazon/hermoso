@@ -49,8 +49,8 @@ func TestCompileTopologyParallelRootsAndFanIn(t *testing.T) {
 		t.Errorf("initial ready cards = %v, want %v", got, want)
 	}
 	bindings := []domain.TaskBinding{
-		{Context: graph.Context, WorkItemID: "left", TaskID: "task-left", BoundAt: time.Now()},
-		{Context: graph.Context, WorkItemID: "right", TaskID: "task-right", BoundAt: time.Now()},
+		{Context: graph.Context, Round: 1, WorkItemID: "left", TaskID: "task-left", BoundAt: time.Now()},
+		{Context: graph.Context, Round: 1, WorkItemID: "right", TaskID: "task-right", BoundAt: time.Now()},
 	}
 	ready, err = plan.CreateReadyCards(bindings)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestReadyRejectsBindingFromAnotherContext(t *testing.T) {
 	other := plan.Context
 	other.FeatureID = "other-feature"
 	_, err = plan.Ready([]domain.TaskBinding{{
-		Context: other, WorkItemID: "root", TaskID: "task-root", BoundAt: time.Now(),
+		Context: other, Round: 1, WorkItemID: "root", TaskID: "task-root", BoundAt: time.Now(),
 	}})
 	if err == nil || !strings.Contains(err.Error(), "context does not match") {
 		t.Fatalf("mismatch error = %v", err)
@@ -290,7 +290,10 @@ func item(id string, parents []string) domain.WorkItem {
 	return domain.WorkItem{
 		ID: id, Title: "Build " + id, Prompt: "Implement " + id,
 		Parents: parents, AcceptanceCriteria: []string{id + " works"},
-		Worker: domain.Worker{Profile: "builder", Skills: []domain.SkillBinding{{Name: "tdd"}, {Name: "review"}}},
+		RequirementIDs: []string{"req-feature"},
+		CriterionIDs:   []string{"ac-feature"},
+		SurfaceIDs:     []string{"surface-feature"},
+		Worker:         domain.Worker{Profile: "builder", Skills: []domain.SkillBinding{{Name: "tdd"}, {Name: "review"}}},
 	}
 }
 

@@ -1,5 +1,5 @@
 {
-  "schema_version": "1",
+  "schema_version": "2",
   "context": {
     "schema_version": "hermoso-context/v1",
     "project_id": "project-1",
@@ -24,6 +24,9 @@
       "acceptance_criteria": [
         "All domain validation tests pass"
       ],
+      "requirement_ids": ["req-reject-malformed"],
+      "acceptance_criterion_ids": ["ac-reject-malformed"],
+      "surface_ids": ["surface-schema-cli"],
       "worker": {
         "profile": "default",
         "skills": [
@@ -46,6 +49,9 @@
       "acceptance_criteria": [
         "Skills can consume schemas"
       ],
+      "requirement_ids": ["req-accept-valid"],
+      "acceptance_criterion_ids": ["ac-accept-valid"],
+      "surface_ids": ["surface-schema-cli"],
       "parents": [
         "domain"
       ],

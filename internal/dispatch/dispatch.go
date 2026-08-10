@@ -31,6 +31,8 @@ type Config struct {
 	DefaultRuntimeBudgetSeconds uint64
 	LifecycleCommands           LifecycleCommands
 	Integration                 *SyntheticIntegration
+	Design                      *domain.FeatureDesign
+	Round                       uint64
 }
 
 type SyntheticIntegration struct {
@@ -45,6 +47,7 @@ type SyntheticIntegration struct {
 
 type WorkItemIdentity struct {
 	Context    domain.ContextRef `json:"context"`
+	Round      uint64            `json:"round"`
 	WorkItemID string            `json:"work_item_id"`
 	Synthetic  bool              `json:"synthetic,omitempty"`
 }
@@ -55,27 +58,33 @@ type ParentReference struct {
 }
 
 type Card struct {
-	Identity             WorkItemIdentity      `json:"identity"`
-	Title                string                `json:"title"`
-	Body                 string                `json:"body"`
-	Parents              []ParentReference     `json:"parents,omitempty"`
-	Tenant               string                `json:"tenant"`
-	Priority             int                   `json:"priority"`
-	WorkspaceKind        string                `json:"workspace_kind"`
-	WorkspacePath        string                `json:"workspace_path"`
-	AssignedProfile      string                `json:"assigned_profile"`
-	ForcedSkills         []domain.SkillBinding `json:"forced_skills"`
-	RuntimeBudgetSeconds uint64                `json:"runtime_budget_seconds"`
-	GoalMode             string                `json:"goal_mode,omitempty"`
-	LifecycleCommands    LifecycleCommands     `json:"lifecycle_commands"`
-	AcceptanceCriteria   []string              `json:"acceptance_criteria"`
-	IdempotencyKey       string                `json:"idempotency_key"`
+	Identity             WorkItemIdentity             `json:"identity"`
+	Title                string                       `json:"title"`
+	Body                 string                       `json:"body"`
+	Parents              []ParentReference            `json:"parents,omitempty"`
+	Tenant               string                       `json:"tenant"`
+	Priority             int                          `json:"priority"`
+	WorkspaceKind        string                       `json:"workspace_kind"`
+	WorkspacePath        string                       `json:"workspace_path"`
+	AssignedProfile      string                       `json:"assigned_profile"`
+	ForcedSkills         []domain.SkillBinding        `json:"forced_skills"`
+	RuntimeBudgetSeconds uint64                       `json:"runtime_budget_seconds"`
+	GoalMode             string                       `json:"goal_mode,omitempty"`
+	LifecycleCommands    LifecycleCommands            `json:"lifecycle_commands"`
+	AcceptanceCriteria   []string                     `json:"acceptance_criteria"`
+	Requirements         []domain.Requirement         `json:"requirements,omitempty"`
+	DesignCriteria       []domain.AcceptanceCriterion `json:"design_acceptance_criteria,omitempty"`
+	Surfaces             []domain.FeatureSurface      `json:"interaction_surfaces,omitempty"`
+	Constraints          []string                     `json:"constraints,omitempty"`
+	BaseModel            *domain.ModelReference       `json:"base_model,omitempty"`
+	IdempotencyKey       string                       `json:"idempotency_key"`
 }
 
 type CardSpec = Card
 
 type Plan struct {
 	Context domain.ContextRef `json:"context"`
+	Round   uint64            `json:"round"`
 	Cards   []Card            `json:"cards"`
 }
 
@@ -85,6 +94,9 @@ func Compile(graph domain.WorkGraph, config Config) (Plan, error) {
 	}
 	if err := validateConfig(config); err != nil {
 		return Plan{}, err
+	}
+	if config.Round == 0 {
+		config.Round = 1
 	}
 
 	items := append([]domain.WorkItem(nil), graph.Items...)
@@ -135,8 +147,11 @@ func Compile(graph domain.WorkGraph, config Config) (Plan, error) {
 		commands.Execute = append([]string{contextCommand}, commands.Execute...)
 		commands.Validate = append([]string{contextCommand}, commands.Validate...)
 		commands.Validate = append(commands.Validate, item.ValidationCommands...)
+		requirements, criteria, surfaces, constraints, baseModel := visibleContract(config.Design, item)
 		card := Card{
-			Identity:             WorkItemIdentity{Context: graph.Context, WorkItemID: item.ID, Synthetic: synthetic},
+			Identity: WorkItemIdentity{
+				Context: graph.Context, Round: config.Round, WorkItemID: item.ID, Synthetic: synthetic,
+			},
 			Title:                item.Title,
 			Body:                 cardBody(graph.Context, workspacePath, item.Prompt),
 			Parents:              parentRefs,
@@ -150,6 +165,11 @@ func Compile(graph domain.WorkGraph, config Config) (Plan, error) {
 			GoalMode:             goalMode,
 			LifecycleCommands:    commands,
 			AcceptanceCriteria:   append([]string(nil), item.AcceptanceCriteria...),
+			Requirements:         requirements,
+			DesignCriteria:       criteria,
+			Surfaces:             surfaces,
+			Constraints:          constraints,
+			BaseModel:            baseModel,
 		}
 		key, err := idempotencyKey(card)
 		if err != nil {
@@ -158,13 +178,16 @@ func Compile(graph domain.WorkGraph, config Config) (Plan, error) {
 		card.IdempotencyKey = key
 		cards = append(cards, card)
 	}
-	return Plan{Context: graph.Context, Cards: cards}, nil
+	return Plan{Context: graph.Context, Round: config.Round, Cards: cards}, nil
 }
 
 // Ready returns unbound cards whose logical parents are all bound. Parent task
 // IDs are resolved in the returned copies; the plan remains reusable.
 func (p Plan) Ready(bindings []domain.TaskBinding) ([]Card, error) {
 	if err := validateBindingContexts(bindings, p.Context); err != nil {
+		return nil, err
+	}
+	if err := validateBindingRound(bindings, p.Round); err != nil {
 		return nil, err
 	}
 	index, err := bindingIndex(bindings)
@@ -194,6 +217,9 @@ func (p Plan) CreateReadyCards(bindings []domain.TaskBinding) ([]Card, error) {
 
 func ResolveParents(card Card, bindings []domain.TaskBinding) (Card, error) {
 	if err := validateBindingContexts(bindings, card.Identity.Context); err != nil {
+		return Card{}, err
+	}
+	if err := validateBindingRound(bindings, card.Identity.Round); err != nil {
 		return Card{}, err
 	}
 	index, err := bindingIndex(bindings)
@@ -275,10 +301,14 @@ func integrationItem(context domain.ContextRef, items []domain.WorkItem, integra
 		Title:                integration.Title,
 		Prompt:               integration.Body,
 		AcceptanceCriteria:   append([]string(nil), integration.AcceptanceCriteria...),
+		RequirementIDs:       collectItemReferences(items, func(item domain.WorkItem) []string { return item.RequirementIDs }),
+		CriterionIDs:         collectItemReferences(items, func(item domain.WorkItem) []string { return item.CriterionIDs }),
+		SurfaceIDs:           collectItemReferences(items, func(item domain.WorkItem) []string { return item.SurfaceIDs }),
 		Parents:              parents,
 		Worker:               integration.Worker,
 		RuntimeBudgetSeconds: integration.RuntimeBudgetSeconds,
 	}
+
 	check := domain.WorkGraph{
 		SchemaVersion: domain.SchemaVersion,
 		Context:       context,
@@ -291,6 +321,70 @@ func integrationItem(context domain.ContextRef, items []domain.WorkItem, integra
 	}
 
 	return item, nil
+}
+
+func visibleContract(
+	design *domain.FeatureDesign,
+	item domain.WorkItem,
+) (
+	[]domain.Requirement,
+	[]domain.AcceptanceCriterion,
+	[]domain.FeatureSurface,
+	[]string,
+	*domain.ModelReference,
+) {
+	if design == nil {
+		return nil, nil, nil, nil, nil
+	}
+	requirementIDs := sliceSet(item.RequirementIDs)
+	criterionIDs := sliceSet(item.CriterionIDs)
+	surfaceIDs := sliceSet(item.SurfaceIDs)
+	requirements := make([]domain.Requirement, 0, len(requirementIDs))
+	for _, requirement := range design.Requirements {
+		if _, ok := requirementIDs[requirement.ID]; ok {
+			requirements = append(requirements, requirement)
+		}
+	}
+	criteria := make([]domain.AcceptanceCriterion, 0, len(criterionIDs))
+	for _, criterion := range design.AcceptanceCriteria {
+		if _, ok := criterionIDs[criterion.ID]; ok {
+			criteria = append(criteria, criterion)
+		}
+	}
+	surfaces := make([]domain.FeatureSurface, 0, len(surfaceIDs))
+	for _, surface := range design.Surfaces {
+		if _, ok := surfaceIDs[surface.ID]; ok {
+			surfaces = append(surfaces, surface)
+		}
+	}
+	baseModel := design.BaseModel
+	return requirements, criteria, surfaces, append([]string(nil), design.Constraints...), &baseModel
+}
+
+func collectItemReferences(
+	items []domain.WorkItem,
+	references func(domain.WorkItem) []string,
+) []string {
+	set := map[string]struct{}{}
+	for _, item := range items {
+		for _, id := range references(item) {
+			set[id] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(set))
+	for id := range set {
+		result = append(result, id)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func sliceSet(values []string) map[string]struct{} {
+	result := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		result[value] = struct{}{}
+	}
+	return result
 }
 
 func topological(items []domain.WorkItem) ([]domain.WorkItem, error) {
@@ -355,6 +449,15 @@ func validateBindingContexts(bindings []domain.TaskBinding, expected domain.Cont
 	for _, binding := range bindings {
 		if !binding.Context.Equal(expected) {
 			return errors.New("task binding context does not match dispatch context")
+		}
+	}
+	return nil
+}
+
+func validateBindingRound(bindings []domain.TaskBinding, expected uint64) error {
+	for _, binding := range bindings {
+		if binding.Round != expected {
+			return errors.New("task binding round does not match dispatch round")
 		}
 	}
 	return nil

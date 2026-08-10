@@ -4,6 +4,11 @@ These source-controlled skills are loaded from this repository. They are not
 copied into target repositories and they never install or edit target
 `.hermoso` state.
 
+The lifecycle skills are `hermoso`, `hermoso-design`,
+`hermoso-verification-author`, `hermoso-construction`, and
+`hermoso-verification`. The verification-author and verifier are separate roles
+so construction contexts never receive hidden contract assets.
+
 ## One-time Hermes setup
 
 Add this repository's `skills` directory to the user's existing Hermes config:

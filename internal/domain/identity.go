@@ -148,6 +148,7 @@ func (e Evidence) validate(path string, errs *ValidationErrors) {
 
 type TaskBinding struct {
 	Context    ContextRef `json:"context"`
+	Round      uint64     `json:"round"`
 	WorkItemID string     `json:"work_item_id"`
 	TaskID     string     `json:"task_id"`
 	BoundAt    time.Time  `json:"bound_at"`
@@ -156,6 +157,9 @@ type TaskBinding struct {
 func (b TaskBinding) Validate() error {
 	var errs ValidationErrors
 	b.Context.validate("context", &errs)
+	if b.Round == 0 {
+		errs.add("round", "must be greater than zero")
+	}
 	validateID("work_item_id", b.WorkItemID, &errs)
 	validateRequired("task_id", b.TaskID, &errs)
 	if strings.TrimSpace(b.TaskID) != b.TaskID || strings.ContainsAny(b.TaskID, "\r\n") {

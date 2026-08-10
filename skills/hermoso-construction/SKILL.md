@@ -32,8 +32,10 @@ hermoso context <project-id> <feature-id> <run-id> <repository> --json
 Echo and compare project, feature, run, canonical repository, and absolute
 workspace at entry and every graph/card boundary. Never infer them from cwd,
 conversation, branch names, or card placement. Block immediately on mismatch.
-Proceed only when status proves that the current design revision and hash are
-approved. Stop and block rather than dispatching from conversational memory.
+Proceed only when status proves that the complete design-package revision/hash
+is approved. The package includes a visible design and hidden verification
+contract/assets. Stop and block rather than dispatching from conversational
+memory.
 
 ## Author the Work Graph
 
@@ -56,6 +58,8 @@ Rules:
 - independent items have no parent links;
 - every item has a real configured profile and ordered skills;
 - acceptance criteria derive from the approved design;
+- every item cites visible `requirement_ids`, `acceptance_criterion_ids`, and
+  `surface_ids`; the graph covers the complete visible design;
 - expected changed surfaces help detect overlap but are not ownership locks;
 - validation commands are concrete and safe to run in the worktree;
 - runtime budgets are proportional;
@@ -89,6 +93,12 @@ The card identity, body, and lifecycle commands must repeat the full context;
 the tenant is derived from `project_id`, and idempotency covers the full
 context. Workers refresh `hermoso context` and compare every field before work,
 validation, handoff, block, or completion.
+
+Cards may contain visible requirement/criterion text, planned or existing
+surface descriptions, constraints, and the exact model reference. They must
+not contain verification-contract paths or hashes, judgment/scenario IDs or
+text, hidden fixture/probe paths, or verifier commands. Treat any such field as
+a disclosure defect and block before dispatch.
 
 Process cards in topological readiness order:
 
@@ -163,6 +173,10 @@ For code needing human review, follow `kanban-worker` and use a
 `review-required:` block. Construction is complete only when every required
 work item is done, integration checks pass, no unresolved blockers remain, and
 the validated construction `phase-result` is persisted by `hermoso result put`.
+The resulting `awaiting_verification` state is handled by
+`hermoso-verification`. A first failed attempt may create one remediation round;
+dispatch it through the same ready/bind/start/complete lifecycle. Do not create
+or accept a third construction round.
 
 ## Common Pitfalls
 

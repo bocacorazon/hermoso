@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ var (
 	ErrConflict    = errors.New("merge is blocked by conflicts")
 	ErrUnsafeReuse = errors.New("existing branch or path cannot be safely reused")
 	ErrNoMerge     = errors.New("no managed merge is in progress")
+	fullObjectID   = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 )
 
 type Manager struct {
@@ -190,6 +192,184 @@ func (m *Manager) WorkItem(ctx context.Context, runID, featureID, itemID string,
 		}
 	}
 	return item, nil, nil
+}
+
+func (m *Manager) Verification(
+	ctx context.Context,
+	runID, featureID string,
+	attempt uint64,
+	candidateCommit string,
+) (Worktree, error) {
+	for _, value := range []struct {
+		name, value string
+	}{{"run ID", runID}, {"feature ID", featureID}} {
+		if err := validateComponent(value.value); err != nil {
+			return Worktree{}, fmt.Errorf("%s: %w", value.name, err)
+		}
+	}
+	if attempt == 0 || attempt > 2 {
+		return Worktree{}, errors.New("verification attempt must be one or two")
+	}
+	if !gitSuccess(m.root, "rev-parse", "--verify", candidateCommit+"^{commit}") {
+		return Worktree{}, errors.New("verification candidate must be a resolvable Git commit")
+	}
+	id := fmt.Sprintf("attempt-%d", attempt)
+	return m.ensure(ctx, Worktree{
+		Kind: "verification", ID: id,
+		Branch:       m.namespace + "/run/" + runID + "/verification/" + id,
+		Path:         filepath.Join(m.worktrees, runID, "verification", id),
+		ParentBranch: candidateCommit,
+	})
+}
+
+func (m *Manager) WorktreeClean(worktree Worktree) error {
+	if err := m.validateManaged(worktree); err != nil {
+		return err
+	}
+	return m.requireClean(worktree)
+}
+
+func (m *Manager) CommitAllowedFiles(
+	ctx context.Context,
+	worktree Worktree,
+	paths []string,
+	message string,
+) (commit string, resultErr error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := m.validateManaged(worktree); err != nil {
+		return "", err
+	}
+	allowed, err := allowedPathSet(paths)
+	if err != nil {
+		return "", err
+	}
+	args := []string{"add", "--"}
+	for _, value := range paths {
+		args = append(args, value)
+	}
+	status, err := git(worktree.Path, "status", "--porcelain", "--untracked-files=all")
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(status, "\n") {
+		if line == "" {
+			continue
+		}
+		if len(line) < 4 {
+			return "", fmt.Errorf("unexpected Git status entry %q", line)
+		}
+		path := strings.TrimSpace(line[3:])
+		if arrow := strings.LastIndex(path, " -> "); arrow >= 0 {
+			path = path[arrow+4:]
+		}
+		if _, ok := allowed[path]; !ok {
+			return "", fmt.Errorf("publication changed non-allowlisted path %q", path)
+		}
+	}
+	if _, err := git(worktree.Path, args...); err != nil {
+		return "", err
+	}
+	stagedForCommit := true
+	defer func() {
+		if resultErr == nil || !stagedForCommit {
+			return
+		}
+		restoreArgs := append([]string{"restore", "--staged", "--"}, paths...)
+		if _, err := git(worktree.Path, restoreArgs...); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("unstage failed publication: %w", err))
+		}
+	}()
+	staged, err := git(worktree.Path, "diff", "--cached", "--name-only")
+	if err != nil {
+		return "", err
+	}
+	for _, path := range strings.Split(staged, "\n") {
+		if path == "" {
+			continue
+		}
+		if _, ok := allowed[path]; !ok {
+			return "", fmt.Errorf("publication staged non-allowlisted path %q", path)
+		}
+	}
+	if strings.TrimSpace(staged) == "" {
+		return m.CurrentCommit(worktree)
+	}
+
+	if _, err := git(worktree.Path, "commit", "-m", message); err != nil {
+		return "", err
+	}
+	stagedForCommit = false
+	return m.CurrentCommit(worktree)
+}
+
+func (m *Manager) ValidateAllowedCommit(
+	worktree Worktree,
+	parentCommit string,
+	paths []string,
+) (string, error) {
+	if err := m.validateManaged(worktree); err != nil {
+		return "", err
+	}
+	allowed, err := allowedPathSet(paths)
+	if err != nil {
+		return "", err
+	}
+	if !fullObjectID.MatchString(parentCommit) {
+		return "", errors.New("allowed commit parent must be a full Git object ID")
+	}
+	if err := m.requireClean(worktree); err != nil {
+		return "", err
+	}
+	current, err := m.CurrentCommit(worktree)
+	if err != nil {
+		return "", err
+	}
+	parents, err := git(worktree.Path, "rev-list", "--parents", "-n", "1", current)
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(parents)
+	if len(fields) != 2 || fields[0] != current || fields[1] != parentCommit {
+		return "", errors.New("existing publication commit must directly descend from the verified candidate")
+	}
+	changed, err := git(worktree.Path, "diff", "--name-only", "--no-renames", parentCommit, current)
+	if err != nil {
+		return "", err
+	}
+	found := false
+	for _, path := range strings.Split(changed, "\n") {
+		if path == "" {
+			continue
+		}
+		found = true
+		if _, ok := allowed[path]; !ok {
+			return "", fmt.Errorf("existing publication commit changed non-allowlisted path %q", path)
+		}
+	}
+	if !found {
+		return "", errors.New("existing publication commit has no allowlisted changes")
+	}
+	return current, nil
+}
+
+func allowedPathSet(paths []string) (map[string]struct{}, error) {
+	if len(paths) == 0 {
+		return nil, errors.New("commit requires at least one allowed path")
+	}
+	allowed := make(map[string]struct{}, len(paths))
+	for _, value := range paths {
+		clean := filepath.ToSlash(filepath.Clean(value))
+		if clean != value || filepath.IsAbs(value) || value == "." || strings.HasPrefix(value, "../") {
+			return nil, fmt.Errorf("invalid allowed commit path %q", value)
+		}
+		if _, exists := allowed[value]; exists {
+			return nil, fmt.Errorf("duplicate allowed commit path %q", value)
+		}
+		allowed[value] = struct{}{}
+	}
+	return allowed, nil
 }
 
 func (m *Manager) ensure(ctx context.Context, wanted Worktree) (Worktree, error) {

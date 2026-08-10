@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const SchemaVersion = "1"
+const SchemaVersion = "2"
 const ContextSchemaVersion = "hermoso-context/v1"
 
 var (

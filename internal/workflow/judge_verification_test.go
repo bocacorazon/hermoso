@@ -12,7 +12,7 @@ import (
 // helper: persist a pending attempt so JudgeVerification has something to judge
 func persistPendingAttempt(t *testing.T, service Service, execution domain.ContextRef, profile string) domain.Run {
 	t.Helper()
-	run := completeVerificationCandidate(t, service, execution, profile)
+	run := completeRubricVerificationCandidate(t, service, execution, profile)
 
 	latest := run.LatestConstruction()
 	candidateCommit := latest.IntegratedFeatureCommit
@@ -20,7 +20,7 @@ func persistPendingAttempt(t *testing.T, service Service, execution domain.Conte
 	stdout := []byte("rubric evidence output")
 
 	outcomes := []domain.JudgmentOutcome{{
-		JudgmentID:             "judgment-feature",
+		JudgmentID:             "judgment-rubric",
 		Status:                 domain.JudgmentPending,
 		RequirementIDs:         []string{"req-feature"},
 		AcceptanceCriterionIDs: []string{"ac-feature"},
@@ -81,7 +81,7 @@ func TestJudgeVerificationPassesPendingOutcome(t *testing.T) {
 	}
 
 	judgments := []domain.SkillJudgment{{
-		JudgmentID: "judgment-feature",
+		JudgmentID: "judgment-rubric",
 		Status:     domain.JudgmentPass,
 		Summary:    "all rubric criteria satisfied",
 		Qualitative: &domain.QualitativeJudgment{
@@ -109,9 +109,10 @@ func TestJudgeVerificationPassesPendingOutcome(t *testing.T) {
 		t.Fatalf("verdict should be pass, got %s", report.Verdict)
 	}
 
-	// Run should transition to in_progress (awaiting release)
-	if updated.Status != domain.StatusInProgress {
-		t.Fatalf("run should be in_progress after passing judgment, got %s", updated.Status)
+	// Rubric-only contract has no gherkin to publish, so run transitions
+	// directly to awaiting_release.
+	if updated.Status != domain.StatusAwaitingRelease {
+		t.Fatalf("run should be awaiting_release after passing judgment, got %s", updated.Status)
 	}
 }
 
@@ -124,7 +125,7 @@ func TestJudgeVerificationFailsPendingOutcome(t *testing.T) {
 	}
 
 	judgments := []domain.SkillJudgment{{
-		JudgmentID: "judgment-feature",
+		JudgmentID: "judgment-rubric",
 		Status:     domain.JudgmentFail,
 		Summary:    "rubric criteria not met — output missing required behavior",
 		Qualitative: &domain.QualitativeJudgment{

@@ -2,8 +2,6 @@ package workflow
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,10 +12,13 @@ import (
 	"time"
 
 	"github.com/bocacorazon/hermoso/internal/contracts"
+	"github.com/bocacorazon/hermoso/internal/digest"
 	"github.com/bocacorazon/hermoso/internal/dispatch"
 	"github.com/bocacorazon/hermoso/internal/domain"
+	"github.com/bocacorazon/hermoso/internal/model"
 	"github.com/bocacorazon/hermoso/internal/repository"
 	"github.com/bocacorazon/hermoso/internal/state"
+	"github.com/bocacorazon/hermoso/internal/verification"
 )
 
 type Service struct {
@@ -44,12 +45,7 @@ type Profile struct {
 }
 
 func Hash(value any) (string, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
+	return digest.JSON(value)
 }
 
 func (s Service) PutDesign(ctx context.Context, execution domain.ContextRef, data []byte) (domain.Run, bool, error) {
@@ -60,29 +56,122 @@ func (s Service) PutDesign(ctx context.Context, execution domain.ContextRef, dat
 	if !design.Context.Equal(execution) {
 		return domain.Run{}, false, errors.New("feature design context does not match command context")
 	}
+	snapshot, err := s.Store.ModelSnapshot(ctx, design.BaseModel.SnapshotID)
+	if err != nil {
+		return domain.Run{}, false, fmt.Errorf("load feature design repository model: %w", err)
+	}
+	if err := verification.ValidateDesignModel(design, snapshot); err != nil {
+		return domain.Run{}, false, err
+	}
+	if err := ensureModelSnapshotFresh(ctx, execution, snapshot); err != nil {
+		return domain.Run{}, false, err
+	}
 	hash, err := Hash(design)
 	if err != nil {
 		return domain.Run{}, false, err
 	}
 	changed := false
 	run, err := s.Store.UpdateRun(ctx, execution, func(run *domain.Run) error {
-		if run.Phase != domain.PhaseDesign && !(run.Phase == domain.PhaseConstruction && run.Construction == nil) {
+		if run.Phase != domain.PhaseDesign && !(run.Phase == domain.PhaseConstruction && len(run.ConstructionRounds) == 0) {
 			return fmt.Errorf("design cannot be changed in phase %s", run.Phase)
 		}
 		if run.Design != nil {
-			if run.Design.Contract.Revision > design.Revision {
+			if run.Design.Feature.Revision > design.Revision {
 				return errors.New("design revision must not move backwards")
 			}
-			if run.Design.Contract.Revision == design.Revision {
-				if run.Design.Hash == hash {
+			if run.Design.Feature.Revision == design.Revision {
+				if run.Design.FeatureHash == hash {
 					return nil
 				}
 				return errors.New("design content changed without incrementing revision")
 			}
 		}
-		run.Design = &domain.DesignState{Contract: design, Hash: hash}
-		run.Construction = nil
+		packageRevision := uint64(1)
+		if run.Design != nil {
+			packageRevision = run.Design.Revision + 1
+		}
+		run.Design = &domain.DesignState{Revision: packageRevision, Feature: design, FeatureHash: hash}
+		run.ConstructionRounds = nil
 		run.Phase = domain.PhaseDesign
+		run.Status = domain.StatusAwaitingApproval
+		run.Revision++
+		run.UpdatedAt = s.Now().UTC()
+		changed = true
+		return nil
+	})
+	return run, changed, err
+}
+
+func (s Service) PutVerificationContract(
+	ctx context.Context,
+	execution domain.ContextRef,
+	data []byte,
+	assets map[string][]byte,
+) (domain.Run, bool, error) {
+	var contract domain.FeatureVerificationContract
+	if err := decodeContract(contracts.FeatureVerificationContract, data, execution, &contract); err != nil {
+		return domain.Run{}, false, err
+	}
+	current, err := s.Store.Run(ctx, execution)
+	if err != nil {
+		return domain.Run{}, false, err
+	}
+	if current.Phase != domain.PhaseDesign || current.Design == nil {
+		return domain.Run{}, false, errors.New("verification contract requires a persisted feature design in the design phase")
+	}
+	snapshot, err := s.Store.ModelSnapshot(ctx, current.Design.Feature.BaseModel.SnapshotID)
+	if err != nil {
+		return domain.Run{}, false, fmt.Errorf("load verification repository model: %w", err)
+	}
+	if err := ensureModelSnapshotFresh(ctx, execution, snapshot); err != nil {
+		return domain.Run{}, false, err
+	}
+	if err := verification.ValidateContract(
+		contract, current.Design.Feature, current.Design.FeatureHash, snapshot, assets,
+	); err != nil {
+		return domain.Run{}, false, err
+	}
+	artifactRootHash, err := s.Store.SealArtifacts(ctx, execution, assets)
+	if err != nil {
+		return domain.Run{}, false, err
+	}
+	contractHash, err := Hash(contract)
+	if err != nil {
+		return domain.Run{}, false, err
+	}
+	changed := false
+	run, err := s.Store.UpdateRun(ctx, execution, func(run *domain.Run) error {
+		if run.Phase != domain.PhaseDesign || run.Design == nil {
+			return errors.New("verification contract requires a persisted feature design in the design phase")
+		}
+		if run.Design.FeatureHash != current.Design.FeatureHash {
+			return errors.New("feature design changed while verification assets were being sealed")
+		}
+		if run.Design.Verification != nil {
+			if run.Design.Verification.Revision > contract.Revision {
+				return errors.New("verification contract revision must not move backwards")
+			}
+			if run.Design.Verification.Revision == contract.Revision {
+				if run.Design.VerificationHash == contractHash && run.Design.ArtifactRootHash == artifactRootHash {
+					return nil
+				}
+				return errors.New("verification contract content changed without incrementing revision")
+			}
+		}
+		packageRevision := run.Design.Revision + 1
+		packageHash, err := domain.DesignPackageHash(
+			packageRevision, run.Design.FeatureHash, contractHash,
+			artifactRootHash, run.Design.Feature.BaseModel,
+		)
+		if err != nil {
+			return err
+		}
+		run.Design.Revision = packageRevision
+		run.Design.Verification = &contract
+		run.Design.VerificationHash = contractHash
+		run.Design.ArtifactRootHash = artifactRootHash
+		run.Design.PackageHash = packageHash
+		run.Design.Approval = nil
 		run.Status = domain.StatusAwaitingApproval
 		run.Revision++
 		run.UpdatedAt = s.Now().UTC()
@@ -98,20 +187,23 @@ func (s Service) ApproveDesign(ctx context.Context, execution domain.ContextRef,
 		if run.Design == nil {
 			return errors.New("no persisted feature design")
 		}
-		if run.Design.Contract.Revision != revision || run.Design.Hash != hash {
-			return errors.New("approval revision or hash does not match current design")
+		if run.Design.Verification == nil || run.Design.PackageHash == "" {
+			return errors.New("design package is incomplete without a verification contract")
+		}
+		if run.Design.Revision != revision || run.Design.PackageHash != hash {
+			return errors.New("approval revision or hash does not match current design package")
 		}
 		if run.Design.Approval != nil {
-			if run.Design.Approval.Revision == revision && run.Design.Approval.ContractHash == hash && run.Design.Approval.Actor == actor {
+			if run.Design.Approval.Revision == revision && run.Design.Approval.PackageHash == hash && run.Design.Approval.Actor == actor {
 				return nil
 			}
-			return errors.New("current design already has a different approval")
+			return errors.New("current design package already has a different approval")
 		}
 		approval := domain.Approval{
 			SchemaVersion: domain.SchemaVersion, Context: execution, Phase: domain.PhaseDesign,
-			Revision: revision, ContractHash: hash, Actor: actor, ApprovedAt: s.Now().UTC(), Comment: comment,
+			Revision: revision, PackageHash: hash, Actor: actor, ApprovedAt: s.Now().UTC(), Comment: comment,
 		}
-		if err := approval.ValidateContract(domain.PhaseDesign, revision, hash); err != nil {
+		if err := approval.ValidatePackage(domain.PhaseDesign, revision, hash); err != nil {
 			return err
 		}
 		run.Design.Approval = &approval
@@ -142,24 +234,32 @@ func (s Service) PutGraph(ctx context.Context, execution domain.ContextRef, data
 		if err := ensureConstructionMutable(*run); err != nil {
 			return err
 		}
-		if run.Phase != domain.PhaseConstruction || run.Design == nil || run.Design.Approval == nil {
-			return errors.New("work graph requires the exact current design approval")
+		if run.Phase != domain.PhaseConstruction || run.Design == nil ||
+			run.Design.Verification == nil || run.Design.Approval == nil {
+			return errors.New("work graph requires the exact current design package approval")
 		}
-		if run.Construction != nil {
-			if len(run.Construction.Items) != 0 && run.Construction.Hash != hash {
+		if err := validateGraphDesign(graph, run.Design.Feature); err != nil {
+			return err
+		}
+		construction := run.CurrentConstruction()
+		if construction != nil {
+			if len(construction.Items) != 0 && construction.Hash != hash {
 				return errors.New("cannot replace a graph after construction preparation")
 			}
-			if run.Construction.Graph.Revision > graph.Revision {
+			if construction.Graph.Revision > graph.Revision {
 				return errors.New("work graph revision must not move backwards")
 			}
-			if run.Construction.Graph.Revision == graph.Revision {
-				if run.Construction.Hash == hash {
+			if construction.Graph.Revision == graph.Revision {
+				if construction.Hash == hash {
 					return nil
 				}
 				return errors.New("work graph content changed without incrementing revision")
 			}
 		}
-		run.Construction = &domain.ConstructionState{Graph: graph, Hash: hash}
+		run.ConstructionRounds = []domain.ConstructionState{{
+			Number: 1, Kind: "initial", SourceHash: run.Design.PackageHash,
+			Graph: graph, Hash: hash,
+		}}
 		run.Revision++
 		run.UpdatedAt = s.Now().UTC()
 		changed = true
@@ -215,23 +315,22 @@ func (s Service) Prepare(ctx context.Context, execution domain.ContextRef, profi
 	if err != nil {
 		return domain.Run{}, dispatch.Plan{}, false, err
 	}
-	if run.Construction == nil || run.Design == nil || run.Design.Approval == nil {
-		return domain.Run{}, dispatch.Plan{}, false, errors.New("construction preparation requires approved design and work graph")
+	construction := run.CurrentConstruction()
+	if construction == nil || run.Design == nil ||
+		run.Design.Verification == nil || run.Design.Approval == nil {
+		return domain.Run{}, dispatch.Plan{}, false, errors.New("construction preparation requires approved design package and work graph")
 	}
 	if err := ensureConstructionMutable(run); err != nil {
 		return domain.Run{}, dispatch.Plan{}, false, err
 	}
-	parentBranch := execution.Repository.DefaultBranch
-	if parentBranch == "" {
-		parentBranch = "HEAD"
-	}
+	parentBranch := run.Design.Feature.BaseModel.SourceRevision
 	feature, err := s.Manager.Feature(ctx, execution.RunID, execution.FeatureID, parentBranch)
 	if err != nil {
 		return domain.Run{}, dispatch.Plan{}, false, err
 	}
-	workspaces := make(map[string]string, len(run.Construction.Graph.Items))
-	states := make([]domain.WorkState, 0, len(run.Construction.Graph.Items))
-	for _, item := range run.Construction.Graph.Items {
+	workspaces := make(map[string]string, len(construction.Graph.Items))
+	states := make([]domain.WorkState, 0, len(construction.Graph.Items))
+	for _, item := range construction.Graph.Items {
 		worktree, blocked, err := s.Manager.WorkItem(ctx, execution.RunID, execution.FeatureID, item.ID, []repository.Worktree{feature})
 		if err != nil {
 			if blocked != nil {
@@ -242,27 +341,30 @@ func (s Service) Prepare(ctx context.Context, execution domain.ContextRef, profi
 		workspaces[item.ID] = worktree.Path
 		states = append(states, domain.WorkState{ID: item.ID, Status: domain.WorkPending, Workspace: workspace(worktree)})
 	}
-	plan, err := dispatch.Compile(run.Construction.Graph, dispatch.Config{
+	plan, err := dispatch.Compile(construction.Graph, dispatch.Config{
 		Priority: profile.Dispatch.Priority, PreparedWorkspaces: workspaces,
 		DefaultRuntimeBudgetSeconds: profile.Dispatch.DefaultRuntimeBudgetSeconds,
 		LifecycleCommands: dispatch.LifecycleCommands{
 			Prepare: profile.Dispatch.Prepare, Execute: profile.Dispatch.Execute, Validate: profile.Dispatch.Validate,
 		},
+		Design: &run.Design.Feature,
+		Round:  construction.Number,
 	})
 	if err != nil {
 		return domain.Run{}, dispatch.Plan{}, false, err
 	}
 	changed := false
 	run, err = s.Store.UpdateRun(ctx, execution, func(current *domain.Run) error {
-		if current.Construction == nil || current.Construction.Hash != run.Construction.Hash {
+		currentConstruction := current.CurrentConstruction()
+		if currentConstruction == nil || currentConstruction.Hash != construction.Hash {
 			return errors.New("construction graph changed during preparation")
 		}
-		if len(current.Construction.Items) != 0 {
+		if len(currentConstruction.Items) != 0 {
 			return nil
 		}
-		current.Construction.ProfilePath = profilePath
-		current.Construction.Feature = workspace(feature)
-		current.Construction.Items = states
+		currentConstruction.ProfilePath = profilePath
+		currentConstruction.Feature = workspace(feature)
+		currentConstruction.Items = states
 		current.Status = domain.StatusInProgress
 		current.Revision++
 		current.UpdatedAt = s.Now().UTC()
@@ -277,23 +379,26 @@ func (s Service) Plan(ctx context.Context, execution domain.ContextRef) (domain.
 	if err != nil {
 		return domain.Run{}, dispatch.Plan{}, err
 	}
-	if run.Construction == nil || len(run.Construction.Items) == 0 {
+	construction := run.CurrentConstruction()
+	if construction == nil || len(construction.Items) == 0 {
 		return domain.Run{}, dispatch.Plan{}, errors.New("construction is not prepared")
 	}
-	profile, err := LoadProfile(run.Construction.ProfilePath)
+	profile, err := LoadProfile(construction.ProfilePath)
 	if err != nil {
 		return domain.Run{}, dispatch.Plan{}, err
 	}
 	workspaces := map[string]string{}
-	for _, item := range run.Construction.Items {
+	for _, item := range construction.Items {
 		workspaces[item.ID] = item.Workspace.Path
 	}
-	plan, err := dispatch.Compile(run.Construction.Graph, dispatch.Config{
+	plan, err := dispatch.Compile(construction.Graph, dispatch.Config{
 		Priority: profile.Dispatch.Priority, PreparedWorkspaces: workspaces,
 		DefaultRuntimeBudgetSeconds: profile.Dispatch.DefaultRuntimeBudgetSeconds,
 		LifecycleCommands: dispatch.LifecycleCommands{
 			Prepare: profile.Dispatch.Prepare, Execute: profile.Dispatch.Execute, Validate: profile.Dispatch.Validate,
 		},
+		Design: &run.Design.Feature,
+		Round:  construction.Number,
 	})
 	return run, plan, err
 }
@@ -305,11 +410,17 @@ func (s Service) Ready(ctx context.Context, execution domain.ContextRef) ([]disp
 	}
 	statuses := map[string]domain.WorkStatus{}
 	bound := map[string]bool{}
-	for _, item := range run.Construction.Items {
+	construction := run.CurrentConstruction()
+	for _, item := range construction.Items {
 		statuses[item.ID] = item.Status
 	}
+	var roundBindings []domain.TaskBinding
 	for _, binding := range run.TaskBindings {
+		if binding.Round != construction.Number {
+			continue
+		}
 		bound[binding.WorkItemID] = true
+		roundBindings = append(roundBindings, binding)
 	}
 	var ready []dispatch.Card
 	for _, card := range plan.Cards {
@@ -329,7 +440,7 @@ func (s Service) Ready(ctx context.Context, execution domain.ContextRef) ([]disp
 		if !parentsComplete {
 			continue
 		}
-		resolved, err := dispatch.ResolveParents(card, run.TaskBindings)
+		resolved, err := dispatch.ResolveParents(card, roundBindings)
 		if errors.Is(err, dispatch.ErrMissingParentBinding) {
 			continue
 		}
@@ -356,7 +467,8 @@ func (s Service) BindTask(ctx context.Context, execution domain.ContextRef, item
 	if item.Status != domain.WorkPending && item.Status != domain.WorkBlocked {
 		return domain.TaskBinding{}, false, fmt.Errorf("work item %q is not bindable from %s", itemID, item.Status)
 	}
-	return s.Store.BindTask(ctx, execution, itemID, taskID, s.Now())
+	construction := run.CurrentConstruction()
+	return s.Store.BindTask(ctx, execution, construction.Number, itemID, taskID, s.Now())
 }
 
 func (s Service) StartWork(ctx context.Context, execution domain.ContextRef, itemID string) (domain.Run, bool, error) {
@@ -378,8 +490,9 @@ func (s Service) StartWork(ctx context.Context, execution domain.ContextRef, ite
 		return domain.Run{}, false, fmt.Errorf("work item %q cannot start from %s", itemID, item.Status)
 	}
 	parents := []repository.Worktree{}
+	construction := run.CurrentConstruction()
 	if len(graphItem.Parents) == 0 {
-		parents = append(parents, repoWorkspace(run.Construction.Feature))
+		parents = append(parents, repoWorkspace(construction.Feature))
 	} else {
 		for _, parentID := range graphItem.Parents {
 			parent, _, err := findItem(run, parentID)
@@ -410,7 +523,7 @@ func (s Service) StartWork(ctx context.Context, execution domain.ContextRef, ite
 		now := s.Now().UTC()
 		target.Status, target.Blocker, target.StartedAt = domain.WorkStarted, "", &now
 		current.Status = domain.StatusInProgress
-		current.Construction.Blocker = ""
+		current.CurrentConstruction().Blocker = ""
 		current.Revision++
 		current.UpdatedAt = now
 		changed = true
@@ -456,7 +569,7 @@ func (s Service) FinishWork(ctx context.Context, execution domain.ContextRef, it
 		}
 		if status == domain.WorkBlocked {
 			run.Status = domain.StatusBlocked
-			run.Construction.Blocker = blocker
+			run.CurrentConstruction().Blocker = blocker
 		}
 		run.Revision++
 		run.UpdatedAt = now
@@ -486,34 +599,35 @@ func (s Service) PutResult(ctx context.Context, execution domain.ContextRef, dat
 	}
 	changed := false
 	run, err := s.Store.UpdateRun(ctx, execution, func(run *domain.Run) error {
-		if run.Construction == nil {
+		construction := run.CurrentConstruction()
+		if construction == nil {
 			return errors.New("construction is not prepared")
 		}
-		if run.Construction.Result != nil {
-			existing, _ := Hash(*run.Construction.Result)
+		if construction.Result != nil {
+			existing, _ := Hash(*construction.Result)
 			if existing == hash {
 				return nil
 			}
 			return errors.New("a different construction result is already persisted")
 		}
 		if result.Status == domain.ResultCompleted {
-			for _, item := range run.Construction.Items {
+			for _, item := range construction.Items {
 				if item.Status != domain.WorkCompleted {
 					return fmt.Errorf("work item %q is not completed", item.ID)
 				}
 			}
-			if run.Construction.IntegratedAt == nil {
+			if construction.IntegratedAt == nil {
 				return errors.New("construction branches have not been integrated")
 			}
 			run.Status = domain.StatusAwaitingVerification
-			run.Construction.Blocker = ""
+			construction.Blocker = ""
 		} else if result.Status == domain.ResultBlocked {
 			run.Status = domain.StatusBlocked
-			run.Construction.Blocker = strings.Join(result.Blockers, "; ")
+			construction.Blocker = strings.Join(result.Blockers, "; ")
 		} else {
 			return fmt.Errorf("construction result status %q is not accepted", result.Status)
 		}
-		run.Construction.Result = &result
+		construction.Result = &result
 		for _, evidence := range result.Evidence {
 			if !containsEvidence(run.Evidence, evidence.ID) {
 				run.Evidence = append(run.Evidence, evidence)
@@ -528,25 +642,57 @@ func (s Service) PutResult(ctx context.Context, execution domain.ContextRef, dat
 }
 
 func (s Service) Resume(ctx context.Context, execution domain.ContextRef) (domain.Run, bool, error) {
+	existing, err := s.Store.Run(ctx, execution)
+	if err != nil {
+		return domain.Run{}, false, err
+	}
+	if existing.Phase == domain.PhaseVerification && existing.Status == domain.StatusBlocked &&
+		existing.Publication == nil && len(existing.VerificationAttempts) > 0 {
+		last := existing.VerificationAttempts[len(existing.VerificationAttempts)-1]
+		if last.Report.Verdict == domain.VerificationPass {
+			published, err := s.publishPassingGherkin(ctx, execution, existing, last)
+			return published, err == nil, err
+		}
+	}
 	changed := false
 	run, err := s.Store.UpdateRun(ctx, execution, func(run *domain.Run) error {
+		if run.Phase == domain.PhaseVerification && run.Status == domain.StatusBlocked {
+			if len(run.VerificationAttempts) == 0 {
+				return errors.New("blocked verification has no persisted attempt")
+			}
+			last := run.VerificationAttempts[len(run.VerificationAttempts)-1]
+			if last.Report.Verdict != domain.VerificationBlocked &&
+				last.Report.Verdict != domain.VerificationInconclusive {
+				return errors.New("failed verification requires human action and cannot be resumed")
+			}
+			run.VerificationIncidents = append(run.VerificationIncidents, last)
+			run.VerificationAttempts = run.VerificationAttempts[:len(run.VerificationAttempts)-1]
+			run.VerificationBlocker = ""
+			run.Phase = domain.PhaseConstruction
+			run.Status = domain.StatusAwaitingVerification
+			run.Revision++
+			run.UpdatedAt = s.Now().UTC()
+			changed = true
+			return nil
+		}
 		if err := ensureConstructionMutable(*run); err != nil {
 			return err
 		}
 		if run.Status != domain.StatusBlocked {
 			return nil
 		}
-		if run.Construction == nil {
+		construction := run.CurrentConstruction()
+		if construction == nil {
 			return errors.New("blocked run has no construction state to resume")
 		}
-		for i := range run.Construction.Items {
-			if run.Construction.Items[i].Status == domain.WorkBlocked {
-				run.Construction.Items[i].Status = domain.WorkPending
-				run.Construction.Items[i].Blocker = ""
+		for i := range construction.Items {
+			if construction.Items[i].Status == domain.WorkBlocked {
+				construction.Items[i].Status = domain.WorkPending
+				construction.Items[i].Blocker = ""
 			}
 		}
-		run.Construction.Blocker = ""
-		run.Construction.Result = nil
+		construction.Blocker = ""
+		construction.Result = nil
 		run.Status = domain.StatusInProgress
 		run.Revision++
 		run.UpdatedAt = s.Now().UTC()
@@ -561,7 +707,8 @@ func (s Service) Integrate(ctx context.Context, execution domain.ContextRef, che
 	if err != nil {
 		return domain.Run{}, repository.IntegrationResult{}, false, err
 	}
-	if run.Construction == nil {
+	construction := run.CurrentConstruction()
+	if construction == nil {
 		return domain.Run{}, repository.IntegrationResult{}, false, errors.New("construction is not prepared")
 	}
 	if err := ensureConstructionMutable(run); err != nil {
@@ -572,18 +719,20 @@ func (s Service) Integrate(ctx context.Context, execution domain.ContextRef, che
 		return domain.Run{}, repository.IntegrationResult{}, false, err
 	}
 	sort.Slice(leaves, func(i, j int) bool { return leaves[i].ID < leaves[j].ID })
-	if run.Construction.IntegratedAt != nil {
+	if construction.IntegratedAt != nil {
 		if err := s.validateIntegratedCommits(run); err != nil {
 			return domain.Run{}, repository.IntegrationResult{}, false, err
 		}
 	}
-	result, integrateErr := s.Manager.Integrate(ctx, execution.RunID, execution.FeatureID, repoWorkspace(run.Construction.Feature), leaves, checks)
+	result, integrateErr := s.Manager.Integrate(
+		ctx, execution.RunID, execution.FeatureID, repoWorkspace(construction.Feature), leaves, checks,
+	)
 	changed := false
 	if integrateErr != nil {
 		run, _ = s.blockRun(ctx, execution, integrateErr.Error())
 		changed = true
 	} else {
-		featureCommit, commitErr := s.Manager.CurrentCommit(repoWorkspace(run.Construction.Feature))
+		featureCommit, commitErr := s.Manager.CurrentCommit(repoWorkspace(construction.Feature))
 		if commitErr != nil {
 			return domain.Run{}, result, false, commitErr
 		}
@@ -596,14 +745,15 @@ func (s Service) Integrate(ctx context.Context, execution domain.ContextRef, che
 			integratedLeaves[i] = domain.IntegratedCommit{ID: leaf.ID, Branch: leaf.Branch, Commit: commit}
 		}
 		run, err = s.Store.UpdateRun(ctx, execution, func(current *domain.Run) error {
-			if current.Construction.IntegratedAt != nil {
+			currentConstruction := current.CurrentConstruction()
+			if currentConstruction.IntegratedAt != nil {
 				return nil
 			}
 			now := s.Now().UTC()
-			current.Construction.IntegratedAt = &now
-			current.Construction.IntegratedFeatureCommit = featureCommit
-			current.Construction.IntegratedLeaves = integratedLeaves
-			current.Construction.Blocker = ""
+			currentConstruction.IntegratedAt = &now
+			currentConstruction.IntegratedFeatureCommit = featureCommit
+			currentConstruction.IntegratedLeaves = integratedLeaves
+			currentConstruction.Blocker = ""
 			current.Status = domain.StatusInProgress
 			current.Revision++
 			current.UpdatedAt = now
@@ -618,22 +768,121 @@ func (s Service) Integrate(ctx context.Context, execution domain.ContextRef, che
 }
 
 func ensureConstructionMutable(run domain.Run) error {
+	construction := run.LatestConstruction()
 	if run.Status == domain.StatusAwaitingVerification ||
-		(run.Construction != nil && run.Construction.Result != nil && run.Construction.Result.Status == domain.ResultCompleted) {
+		(construction != nil && construction.Result != nil && construction.Result.Status == domain.ResultCompleted) {
 		return errors.New("completed construction is immutable")
 	}
 	return nil
 }
 
+func validateGraphDesign(graph domain.WorkGraph, design domain.FeatureDesign) error {
+	requirements := make(map[string]struct{}, len(design.Requirements))
+	criteria := make(map[string]domain.AcceptanceCriterion, len(design.AcceptanceCriteria))
+	surfaces := make(map[string]struct{}, len(design.Surfaces))
+	for _, requirement := range design.Requirements {
+		requirements[requirement.ID] = struct{}{}
+	}
+	for _, criterion := range design.AcceptanceCriteria {
+		criteria[criterion.ID] = criterion
+	}
+	for _, surface := range design.Surfaces {
+		surfaces[surface.ID] = struct{}{}
+	}
+	coveredRequirements := map[string]struct{}{}
+	coveredCriteria := map[string]struct{}{}
+	coveredSurfaces := map[string]struct{}{}
+	var problems []string
+	for _, item := range graph.Items {
+		itemRequirements := make(map[string]struct{}, len(item.RequirementIDs))
+		for _, id := range item.RequirementIDs {
+			if _, ok := requirements[id]; !ok {
+				problems = append(problems, fmt.Sprintf("work item %q references unknown requirement %q", item.ID, id))
+				continue
+			}
+			itemRequirements[id] = struct{}{}
+			coveredRequirements[id] = struct{}{}
+		}
+		for _, id := range item.CriterionIDs {
+			criterion, ok := criteria[id]
+			if !ok {
+				problems = append(problems, fmt.Sprintf("work item %q references unknown acceptance criterion %q", item.ID, id))
+				continue
+			}
+			coveredCriteria[id] = struct{}{}
+			for _, requirementID := range criterion.RequirementIDs {
+				if _, ok := itemRequirements[requirementID]; !ok {
+					problems = append(
+						problems,
+						fmt.Sprintf(
+							"work item %q criterion %q requires requirement %q",
+							item.ID, id, requirementID,
+						),
+					)
+				}
+			}
+		}
+		for _, id := range item.SurfaceIDs {
+			if _, ok := surfaces[id]; !ok {
+				problems = append(problems, fmt.Sprintf("work item %q references unknown surface %q", item.ID, id))
+				continue
+			}
+			coveredSurfaces[id] = struct{}{}
+		}
+	}
+	for id := range requirements {
+		if _, ok := coveredRequirements[id]; !ok {
+			problems = append(problems, fmt.Sprintf("requirement %q is not covered by the work graph", id))
+		}
+	}
+	for id := range criteria {
+		if _, ok := coveredCriteria[id]; !ok {
+			problems = append(problems, fmt.Sprintf("acceptance criterion %q is not covered by the work graph", id))
+		}
+	}
+	for id := range surfaces {
+		if _, ok := coveredSurfaces[id]; !ok {
+			problems = append(problems, fmt.Sprintf("surface %q is not covered by the work graph", id))
+		}
+	}
+	if len(problems) != 0 {
+		sort.Strings(problems)
+		return fmt.Errorf("work graph design traceability failed: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func ensureModelSnapshotFresh(
+	ctx context.Context,
+	execution domain.ContextRef,
+	snapshot domain.ModelSnapshot,
+) error {
+	head, err := model.ResolveRevision(ctx, execution.Repository.Repository, "HEAD")
+	if err != nil {
+		return err
+	}
+	if snapshot.Manifest.SourceRevision != head {
+		return fmt.Errorf(
+			"repository model snapshot is stale: indexed %s, repository HEAD is %s",
+			snapshot.Manifest.SourceRevision, head,
+		)
+	}
+	return nil
+}
+
 func constructionLeaves(run domain.Run) ([]repository.Worktree, error) {
+	construction := run.LatestConstruction()
+	if construction == nil {
+		return nil, errors.New("construction is not prepared")
+	}
 	children := map[string]bool{}
-	for _, item := range run.Construction.Graph.Items {
+	for _, item := range construction.Graph.Items {
 		for _, parent := range item.Parents {
 			children[parent] = true
 		}
 	}
 	var leaves []repository.Worktree
-	for _, item := range run.Construction.Items {
+	for _, item := range construction.Items {
 		if children[item.ID] {
 			continue
 		}
@@ -647,25 +896,26 @@ func constructionLeaves(run domain.Run) ([]repository.Worktree, error) {
 }
 
 func (s Service) validateIntegratedCommits(run domain.Run) error {
-	if run.Construction == nil || run.Construction.IntegratedAt == nil {
+	construction := run.LatestConstruction()
+	if construction == nil || construction.IntegratedAt == nil {
 		return errors.New("construction branches have not been integrated")
 	}
-	featureCommit, err := s.Manager.CurrentCommit(repoWorkspace(run.Construction.Feature))
+	featureCommit, err := s.Manager.CurrentCommit(repoWorkspace(construction.Feature))
 	if err != nil {
 		return err
 	}
-	if featureCommit != run.Construction.IntegratedFeatureCommit {
+	if featureCommit != construction.IntegratedFeatureCommit {
 		return errors.New("integrated feature commit has drifted")
 	}
 	leaves, err := constructionLeaves(run)
 	if err != nil {
 		return err
 	}
-	if len(leaves) != len(run.Construction.IntegratedLeaves) {
+	if len(leaves) != len(construction.IntegratedLeaves) {
 		return errors.New("integrated leaf set has drifted")
 	}
 	for i, leaf := range leaves {
-		recorded := run.Construction.IntegratedLeaves[i]
+		recorded := construction.IntegratedLeaves[i]
 		if recorded.ID != leaf.ID || recorded.Branch != leaf.Branch {
 			return errors.New("integrated leaf identity has drifted")
 		}
@@ -683,8 +933,8 @@ func (s Service) validateIntegratedCommits(run domain.Run) error {
 func (s Service) blockRun(ctx context.Context, execution domain.ContextRef, blocker string) (domain.Run, error) {
 	return s.Store.UpdateRun(ctx, execution, func(run *domain.Run) error {
 		run.Status = domain.StatusBlocked
-		if run.Construction != nil {
-			run.Construction.Blocker = blocker
+		if construction := run.CurrentConstruction(); construction != nil {
+			construction.Blocker = blocker
 		}
 		run.Revision++
 		run.UpdatedAt = s.Now().UTC()
@@ -693,20 +943,21 @@ func (s Service) blockRun(ctx context.Context, execution domain.ContextRef, bloc
 }
 
 func findItem(run domain.Run, id string) (*domain.WorkState, *domain.WorkItem, error) {
-	if run.Construction == nil {
+	construction := run.CurrentConstruction()
+	if construction == nil {
 		return nil, nil, errors.New("construction is not prepared")
 	}
 	var stateItem *domain.WorkState
-	for i := range run.Construction.Items {
-		if run.Construction.Items[i].ID == id {
-			stateItem = &run.Construction.Items[i]
+	for i := range construction.Items {
+		if construction.Items[i].ID == id {
+			stateItem = &construction.Items[i]
 			break
 		}
 	}
 	var graphItem *domain.WorkItem
-	for i := range run.Construction.Graph.Items {
-		if run.Construction.Graph.Items[i].ID == id {
-			graphItem = &run.Construction.Graph.Items[i]
+	for i := range construction.Graph.Items {
+		if construction.Graph.Items[i].ID == id {
+			graphItem = &construction.Graph.Items[i]
 			break
 		}
 	}
