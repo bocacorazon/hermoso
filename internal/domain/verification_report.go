@@ -145,14 +145,14 @@ func (r VerificationReport) Validate() error {
 		errs.add("design_package_hash", "must use sha256:<64 lowercase hex characters>")
 	}
 	r.CandidateModel.validate("candidate_model", &errs)
-	if r.Verdict != VerificationBlocked && r.CandidateModel.SourceRevision != r.CandidateCommit {
+	if r.Verdict != VerificationBlocked && r.Verdict != VerificationPending && r.CandidateModel.SourceRevision != r.CandidateCommit {
 		errs.add("candidate_model.source_revision", "must match candidate_commit for completed verification")
 	}
 	if len(r.Outcomes) == 0 {
 		errs.add("outcomes", "must contain every required judgment")
 	}
 	seen := map[string]struct{}{}
-	hasFailure, hasBlocked := false, false
+	hasFailure, hasBlocked, hasPending := false, false, false
 	for i, outcome := range r.Outcomes {
 		path := fmt.Sprintf("outcomes[%d]", i)
 		validateID(path+".judgment_id", outcome.JudgmentID, &errs)
@@ -160,11 +160,12 @@ func (r VerificationReport) Validate() error {
 			errs.add(path+".judgment_id", "must be unique")
 		}
 		seen[outcome.JudgmentID] = struct{}{}
-		if outcome.Status != JudgmentPass && outcome.Status != JudgmentFail && outcome.Status != JudgmentBlocked {
-			errs.add(path+".status", "must be pass, fail, or blocked")
+		if outcome.Status != JudgmentPass && outcome.Status != JudgmentFail && outcome.Status != JudgmentBlocked && outcome.Status != JudgmentPending {
+			errs.add(path+".status", "must be pass, fail, blocked, or pending")
 		}
 		hasFailure = hasFailure || outcome.Status == JudgmentFail
 		hasBlocked = hasBlocked || outcome.Status == JudgmentBlocked
+		hasPending = hasPending || outcome.Status == JudgmentPending
 		validateRequiredIDs(path+".requirement_ids", outcome.RequirementIDs, true, &errs)
 		validateRequiredIDs(path+".acceptance_criterion_ids", outcome.AcceptanceCriterionIDs, true, &errs)
 		validateRequiredIDs(path+".surface_ids", outcome.SurfaceIDs, true, &errs)
@@ -180,17 +181,21 @@ func (r VerificationReport) Validate() error {
 		}
 	}
 	if r.Verdict != VerificationPass && r.Verdict != VerificationFail &&
-		r.Verdict != VerificationBlocked && r.Verdict != VerificationInconclusive {
-		errs.add("verdict", "must be pass, fail, blocked, or inconclusive")
+		r.Verdict != VerificationBlocked && r.Verdict != VerificationInconclusive &&
+		r.Verdict != VerificationPending {
+		errs.add("verdict", "must be pass, fail, blocked, inconclusive, or pending")
 	}
-	if r.Verdict == VerificationPass && (hasFailure || hasBlocked) {
-		errs.add("verdict", "pass requires every judgment to pass")
+	if r.Verdict == VerificationPass && (hasFailure || hasBlocked || hasPending) {
+		errs.add("verdict", "pass requires every judgment to pass (no pending, failure, or blocked)")
 	}
-	if r.Verdict == VerificationFail && (!hasFailure || hasBlocked) {
-		errs.add("verdict", "fail requires at least one failure and no blocked judgment")
+	if r.Verdict == VerificationFail && (!hasFailure || hasBlocked || hasPending) {
+		errs.add("verdict", "fail requires at least one failure and no pending or blocked judgment")
 	}
 	if r.Verdict == VerificationBlocked && !hasBlocked && len(r.Findings) == 0 {
 		errs.add("verdict", "blocked requires a blocked judgment or finding")
+	}
+	if r.Verdict == VerificationPending && !hasPending {
+		errs.add("verdict", "pending requires at least one pending judgment")
 	}
 	validateCoverageOutcomes("requirements", r.Requirements, &errs)
 	validateCoverageOutcomes("acceptance_criteria", r.AcceptanceCriteria, &errs)
@@ -213,8 +218,9 @@ func validateCoverageOutcomes(path string, outcomes []CoverageOutcome, errs *Val
 		}
 		seen[outcome.ID] = struct{}{}
 		if outcome.Status != string(JudgmentPass) && outcome.Status != string(JudgmentFail) &&
-			outcome.Status != string(JudgmentBlocked) && outcome.Status != "excluded" {
-			errs.add(itemPath+".status", "must be pass, fail, blocked, or excluded")
+			outcome.Status != string(JudgmentBlocked) && outcome.Status != string(JudgmentPending) &&
+			outcome.Status != "excluded" {
+			errs.add(itemPath+".status", "must be pass, fail, blocked, pending, or excluded")
 		}
 		if outcome.Status == "excluded" && outcome.Rationale == "" {
 			errs.add(itemPath+".rationale", "must explain an approved exclusion")

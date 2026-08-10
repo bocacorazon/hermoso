@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -20,10 +21,11 @@ func TestVerificationPendingConstant(t *testing.T) {
 
 func testContextRef() ContextRef {
 	return ContextRef{
-		ProjectID:  "proj-1",
-		FeatureID:  "feat-1",
-		RunID:      "run-1",
-		Repository: TargetIdentity{Repository: "/workspace/project"},
+		SchemaVersion: ContextSchemaVersion,
+		ProjectID:     "proj-1",
+		FeatureID:     "feat-1",
+		RunID:         "run-1",
+		Repository:    TargetIdentity{Repository: "/workspace/project"},
 	}
 }
 
@@ -36,7 +38,13 @@ func validPendingReport() VerificationReport {
 		Attempt:            1,
 		CandidateCommit:    "0123456789abcdef0123456789abcdef01234567",
 		DesignPackageHash:  "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		CandidateModel:     ModelReference{SnapshotID: "snap-1", SourceRevision: "0123456789abcdef0123456789abcdef01234567"},
+		CandidateModel: ModelReference{
+			SchemaVersion:     ModelSchemaVersion,
+			SnapshotID:        "model-" + strings.Repeat("a", 32),
+			ContentHash:       "sha256:" + strings.Repeat("b", 64),
+			SourceRevision:    "0123456789abcdef0123456789abcdef01234567",
+			VocabularyVersion: "v1",
+		},
 		Outcomes: []JudgmentOutcome{{
 			JudgmentID:             "judgment-1",
 			Status:                 JudgmentPending,
@@ -104,5 +112,46 @@ func TestSkillJudgmentJSONRoundTrip(t *testing.T) {
 	}
 	if restored.JudgmentID != original.JudgmentID || restored.Status != original.Status {
 		t.Fatalf("round-trip mismatch: %+v", restored)
+	}
+}
+
+func TestReportValidateAcceptsPendingOutcome(t *testing.T) {
+	report := validPendingReport()
+	if err := report.Validate(); err != nil {
+		t.Fatalf("pending report should validate: %v", err)
+	}
+}
+
+func TestReportValidateRejectsPendingOutcomeWithoutSummary(t *testing.T) {
+	report := validPendingReport()
+	report.Outcomes[0].Summary = ""
+	if err := report.Validate(); err == nil {
+		t.Fatal("pending outcome without summary should fail validation")
+	}
+}
+
+func TestReportValidatePendingVerdictRequiresPendingOutcome(t *testing.T) {
+	report := validPendingReport()
+	report.Outcomes[0].Status = JudgmentPass
+	report.Verdict = VerificationPending
+	if err := report.Validate(); err == nil {
+		t.Fatal("pending verdict with no pending outcomes should fail")
+	}
+}
+
+func TestReportValidatePassRejectsPendingOutcome(t *testing.T) {
+	report := validPendingReport()
+	report.Verdict = VerificationPass
+	if err := report.Validate(); err == nil {
+		t.Fatal("pass verdict with pending outcome should fail")
+	}
+}
+
+func TestReportValidateFailRejectsPendingOutcome(t *testing.T) {
+	report := validPendingReport()
+	// Keep the pending outcome, try to set verdict to fail
+	report.Verdict = VerificationFail
+	if err := report.Validate(); err == nil {
+		t.Fatal("fail verdict should not allow pending outcomes")
 	}
 }
