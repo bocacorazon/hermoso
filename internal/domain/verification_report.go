@@ -121,6 +121,11 @@ type RemediationSpec struct {
 	CreatedAt        time.Time         `json:"created_at"`
 }
 
+type SkillRemediation struct {
+	Needs []RemediationNeed `json:"needs"`
+	Graph WorkGraph         `json:"graph"`
+}
+
 type GherkinPublication struct {
 	Attempt           uint64         `json:"attempt"`
 	VerifiedCommit    string         `json:"verified_commit"`
