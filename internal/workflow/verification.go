@@ -277,13 +277,8 @@ func (s Service) persistVerificationAttempt(
 			run.Status = domain.StatusAwaitingJudgment
 		case domain.VerificationFail:
 			if attempt.Number == 1 {
-				round, err := remediationRound(*run, attempt)
-				if err != nil {
-					return err
-				}
-				run.ConstructionRounds = append(run.ConstructionRounds, round)
 				run.Phase = domain.PhaseConstruction
-				run.Status = domain.StatusPending
+				run.Status = domain.StatusAwaitingRemediation
 			} else {
 				run.Phase = domain.PhaseVerification
 				run.Status = domain.StatusBlocked
@@ -581,6 +576,63 @@ func validateReportCompleteness(
 	return nil
 }
 
+func (s Service) PutRemediation(
+	ctx context.Context,
+	execution domain.ContextRef,
+	data []byte,
+) (domain.Run, bool, error) {
+	var spec domain.SkillRemediation
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return domain.Run{}, false, fmt.Errorf("decode skill remediation: %w", err)
+	}
+	if len(spec.Needs) == 0 {
+		return domain.Run{}, false, errors.New("remediation spec must contain at least one need")
+	}
+	if !spec.Graph.Context.Equal(execution) {
+		return domain.Run{}, false, errors.New("remediation graph context does not match command context")
+	}
+	if err := spec.Graph.Validate(); err != nil {
+		return domain.Run{}, false, fmt.Errorf("remediation graph validation: %w", err)
+	}
+	graphHash, err := Hash(spec.Graph)
+	if err != nil {
+		return domain.Run{}, false, err
+	}
+	changed := false
+	run, err := s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+		if r.Phase != domain.PhaseConstruction || r.Status != domain.StatusAwaitingRemediation {
+			return errors.New("remediation requires a run in awaiting_remediation state")
+		}
+		if len(r.VerificationAttempts) == 0 {
+			return errors.New("no verification attempt to remediate")
+		}
+		attempt := r.VerificationAttempts[len(r.VerificationAttempts)-1]
+		remediationSpec := domain.RemediationSpec{
+			SchemaVersion:    domain.SchemaVersion,
+			Context:          r.Context,
+			FailedReportHash: attempt.ReportHash,
+			Needs:            spec.Needs,
+			CreatedAt:        attempt.Report.CompletedAt,
+		}
+		round := domain.ConstructionState{
+			Number:      uint64(len(r.ConstructionRounds) + 1),
+			Kind:        "remediation",
+			SourceHash:  attempt.ReportHash,
+			Remediation: &remediationSpec,
+			Graph:       spec.Graph,
+			Hash:        graphHash,
+		}
+		r.ConstructionRounds = append(r.ConstructionRounds, round)
+		r.Phase = domain.PhaseConstruction
+		r.Status = domain.StatusPending
+		r.Revision++
+		r.UpdatedAt = s.Now().UTC()
+		changed = true
+		return nil
+	})
+	return run, changed, err
+}
+
 func remediationRound(run domain.Run, attempt domain.VerificationAttempt) (domain.ConstructionState, error) {
 	criteria := make(map[string]domain.AcceptanceCriterion, len(run.Design.Feature.AcceptanceCriteria))
 	for _, criterion := range run.Design.Feature.AcceptanceCriteria {
@@ -814,13 +866,8 @@ func (s Service) JudgeVerification(
 			r.Status = domain.StatusInProgress
 		case domain.VerificationFail:
 			if attempt.Number == 1 {
-				round, err := remediationRound(*r, *attempt)
-				if err != nil {
-					return err
-				}
-				r.ConstructionRounds = append(r.ConstructionRounds, round)
 				r.Phase = domain.PhaseConstruction
-				r.Status = domain.StatusPending
+				r.Status = domain.StatusAwaitingRemediation
 			} else {
 				r.Phase = domain.PhaseVerification
 				r.Status = domain.StatusBlocked

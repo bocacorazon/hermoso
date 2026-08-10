@@ -147,12 +147,12 @@ func TestJudgeVerificationFailsPendingOutcome(t *testing.T) {
 		t.Fatalf("verdict should be fail, got %s", report.Verdict)
 	}
 
-	// First attempt fail should trigger remediation round (construction/pending)
+	// First attempt fail should transition to awaiting_remediation
 	if updated.Phase != domain.PhaseConstruction {
 		t.Fatalf("phase should be construction for remediation, got %s", updated.Phase)
 	}
-	if updated.Status != domain.StatusPending {
-		t.Fatalf("status should be pending for remediation, got %s", updated.Status)
+	if updated.Status != domain.StatusAwaitingRemediation {
+		t.Fatalf("status should be awaiting_remediation, got %s", updated.Status)
 	}
 }
 

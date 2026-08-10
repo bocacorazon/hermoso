@@ -203,11 +203,11 @@ func TestVerificationRubricFailTriggersRemediation(t *testing.T) {
 	if report.Verdict != domain.VerificationFail {
 		t.Fatalf("expected fail, got %s", report.Verdict)
 	}
-	if run.Status != domain.StatusPending || run.Phase != domain.PhaseConstruction {
-		t.Fatalf("expected construction pending for remediation, got phase=%s status=%s",
+	if run.Status != domain.StatusAwaitingRemediation || run.Phase != domain.PhaseConstruction {
+		t.Fatalf("expected construction awaiting_remediation, got phase=%s status=%s",
 			run.Phase, run.Status)
 	}
-	if len(run.ConstructionRounds) != 2 {
-		t.Fatalf("expected remediation round, got %d rounds", len(run.ConstructionRounds))
+	if len(run.ConstructionRounds) != 1 {
+		t.Fatalf("expected no remediation round yet, got %d rounds", len(run.ConstructionRounds))
 	}
 }

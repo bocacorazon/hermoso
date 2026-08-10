@@ -260,7 +260,7 @@ func TestResumeCompletesPartiallyRecordedGherkinPublication(t *testing.T) {
 	}
 }
 
-func TestVerificationFailureCreatesOneRemediationRound(t *testing.T) {
+func TestVerificationFailureTransitionsToAwaitingRemediation(t *testing.T) {
 	t.Parallel()
 	_, service, execution, profile := setupVerificationRun(t, "verification-remediation", true)
 	completeVerificationCandidate(t, service, execution, profile)
@@ -270,11 +270,39 @@ func TestVerificationFailureCreatesOneRemediationRound(t *testing.T) {
 		t.Fatal(err)
 	}
 	if report.Verdict != domain.VerificationFail || run.Phase != domain.PhaseConstruction ||
-		run.Status != domain.StatusPending || len(run.ConstructionRounds) != 2 {
+		run.Status != domain.StatusAwaitingRemediation || len(run.ConstructionRounds) != 1 {
 		t.Fatalf("first failure report=%#v run=%#v", report, run)
 	}
+	// No remediation round should be created yet — skill must author it.
+	if remediation := run.LatestConstruction(); remediation != nil && remediation.Kind == "remediation" {
+		t.Fatalf("Go should not create remediation round: %#v", remediation)
+	}
+}
+
+func TestVerificationFailureCreatesOneRemediationRound(t *testing.T) {
+	t.Parallel()
+	_, service, execution, profile := setupVerificationRun(t, "verification-remediation-full", true)
+	completeVerificationCandidate(t, service, execution, profile)
+
+	run, report, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict != domain.VerificationFail ||
+		run.Status != domain.StatusAwaitingRemediation {
+		t.Fatalf("first failure report=%#v run=%#v", report, run)
+	}
+
+	// Skill authors remediation spec.
+	run, err = putRemediationSpec(t, service, execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Phase != domain.PhaseConstruction || run.Status != domain.StatusPending {
+		t.Fatalf("expected construction/pending after remediation, got %s/%s", run.Phase, run.Status)
+	}
 	remediation := run.LatestConstruction()
-	if remediation.Kind != "remediation" || remediation.Remediation == nil ||
+	if remediation == nil || remediation.Kind != "remediation" || remediation.Remediation == nil ||
 		remediation.SourceHash != run.VerificationAttempts[0].ReportHash {
 		t.Fatalf("remediation round=%#v", remediation)
 	}
@@ -335,6 +363,13 @@ func TestSecondVerificationFailureBlocksWithoutThirdRound(t *testing.T) {
 	_, service, execution, profile := setupVerificationRun(t, "verification-second-fail", true)
 	completeVerificationCandidate(t, service, execution, profile)
 	run, _, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != domain.StatusAwaitingRemediation {
+		t.Fatalf("expected awaiting_remediation, got %s", run.Status)
+	}
+	run, err = putRemediationSpec(t, service, execution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -969,6 +1004,43 @@ func completeVerificationCandidate(
 		t.Fatal(err)
 	}
 	return run
+}
+
+func putRemediationSpec(
+	t *testing.T,
+	service Service,
+	execution domain.ContextRef,
+) (domain.Run, error) {
+	t.Helper()
+	spec := domain.SkillRemediation{
+		Needs: []domain.RemediationNeed{{
+			RequirementIDs:         []string{"req-feature"},
+			AcceptanceCriterionIDs: []string{"ac-feature"},
+			Expected:               "Works",
+			Actual:                  "visible behavior is not fixed",
+		}},
+		Graph: domain.WorkGraph{
+			SchemaVersion: domain.SchemaVersion,
+			Context:       execution,
+			Producer:      domain.Producer{Skill: "hermoso-verification", Runtime: "agent"},
+			Revision:      1,
+			Items: []domain.WorkItem{{
+				ID:                 "remediation-1",
+				Title:              "Remediate failed visible behavior",
+				Prompt:             "Create fixed.txt in the workspace root to satisfy the failing test.",
+				AcceptanceCriteria: []string{"Works"},
+				RequirementIDs:     []string{"req-feature"},
+				CriterionIDs:       []string{"ac-feature"},
+				SurfaceIDs:         []string{"surface-feature"},
+				Worker: domain.Worker{
+					Profile: "default",
+					Skills:  []domain.SkillBinding{{Name: "hermoso-construction"}},
+				},
+			}},
+		},
+	}
+	run, _, err := service.PutRemediation(context.Background(), execution, encode(t, spec))
+	return run, err
 }
 
 func testDesign(t *testing.T, ctx domain.ContextRef, revision uint64, objective string) domain.FeatureDesign {
