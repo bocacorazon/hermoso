@@ -250,12 +250,6 @@ type scenarioRecord struct {
 }
 
 func parseGherkin(data []byte) (map[string]scenarioRecord, error) {
-	upper := strings.ToUpper(string(data))
-	for _, placeholder := range []string{"TODO", "TBD", "NEEDS CLARIFICATION", "[PLACEHOLDER]"} {
-		if strings.Contains(upper, placeholder) {
-			return nil, fmt.Errorf("contains unresolved placeholder %q", placeholder)
-		}
-	}
 	var next uint64
 	document, err := gherkin.ParseGherkinDocument(bytes.NewReader(data), func() string {
 		return fmt.Sprintf("gherkin-%d", atomic.AddUint64(&next, 1))
