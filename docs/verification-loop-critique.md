@@ -3,6 +3,7 @@
 Date: 2026-08-09
 Branch: `bdd-contracts-and-verification`
 Status: Design evaluation
+Updated: 2026-08-10 — Issue A resolved
 
 ## Principle
 
@@ -55,7 +56,20 @@ should be Go.
 
 ## Where the design violates the principle
 
-### Issue A (severe): Rubric/qualitative oracles are reduced to exit codes in Go
+### Issue A (severe): Rubric/qualitative oracles are reduced to exit codes in Go — RESOLVED
+
+**Status**: Resolved on 2026-08-10. The two-phase split is implemented:
+- Phase 1 (`verification run`): Go executes the verifier command, collects
+  evidence (stdout, stderr, exit code, artifacts), and evaluates mechanical
+  oracles (exit_code, stdout_regex, file, json_path, gherkin). For rubric
+  oracle types, Go marks the outcome as `JudgmentPending` and persists the
+  attempt with `StatusAwaitingJudgment`.
+- Phase 2 (`verification judge`): The `hermoso-verification` skill reads
+  pending outcomes, applies the hash-locked rubric criteria via reasoning,
+  and submits structured `SkillJudgment` entries. Go validates the
+  judgment structure (correct judgment ID, valid status, all pending
+  outcomes covered, no non-pending outcomes targeted), applies the
+  judgments, re-aggregates verdict/coverage, and transitions the run.
 
 **Location**: `internal/workflow/verification.go`, `judgeExecution`, lines
 358-416.
@@ -258,7 +272,7 @@ It gets the judgment boundary wrong in three places, all in
 
 | Function | What Go does | What it should do | Who should do the judgment |
 |---|---|---|---|
-| `judgeExecution` (rubric/BDD) | Reduces qualitative oracle to exit code | Collect evidence, let skill apply rubric | `hermoso-verification` skill |
+| `judgeExecution` (rubric) | ~~Reduces qualitative oracle to exit code~~ Collects evidence, returns `JudgmentPending` | ✅ Done — Go collects evidence, skill applies rubric in Phase 2 | `hermoso-verification` skill |
 | `remediationRound` | Templates remediation needs + work items | Enforce limits, expose failure, accept skill-authored spec | `hermoso-verification` or remediation-author skill |
 | `resolveCandidateSurfaces` (planned) | Fuzzy title match | Enforce "all surfaces resolved" invariant, let skill resolve | `hermoso-verification` skill |
 
@@ -272,7 +286,8 @@ And it has the inverse problem in one place:
 
 The `hermoso-verification` skill is currently too thin — it calls
 `hermoso verification run` and routes the result. It should be the agent that
-applies rubric judgments, resolves planned surfaces against the model, and
-authors remediation specs. The Go binary should collect evidence, enforce
-invariants, validate structure, and persist — but stop short of making
-qualitative judgments that a reasoning model would make better.
+applies rubric judgments (✅ done via `verification judge`), resolves planned
+surfaces against the model, and authors remediation specs. The Go binary
+should collect evidence, enforce invariants, validate structure, and persist
+— but stop short of making qualitative judgments that a reasoning model would
+make better.
