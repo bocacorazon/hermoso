@@ -37,6 +37,16 @@ func (s Store) Repository() Repository {
 	return s.repository
 }
 
+func (s Store) Project(ctx context.Context) (domain.Project, error) {
+	var project domain.Project
+	err := s.withLock(ctx, false, func() error {
+		var err error
+		project, err = s.readProjectUnlocked()
+		return err
+	})
+	return project, err
+}
+
 func Initialize(ctx context.Context, start string, now time.Time) (domain.Project, bool, error) {
 	repository, err := DiscoverRepository(ctx, start)
 	if err != nil {
@@ -211,8 +221,10 @@ func (s Store) UpdateRun(ctx context.Context, expected domain.ContextRef, update
 // BindTask records the Hermes task returned for a work item without consulting
 // Hermes storage. Repeating the same binding is idempotent; changing either
 // side of an existing binding is rejected.
-func (s Store) BindTask(ctx context.Context, execution domain.ContextRef, workItemID, taskID string, now time.Time) (domain.TaskBinding, bool, error) {
-	candidate := domain.TaskBinding{Context: execution, WorkItemID: workItemID, TaskID: taskID, BoundAt: now.UTC()}
+func (s Store) BindTask(ctx context.Context, execution domain.ContextRef, round uint64, workItemID, taskID string, now time.Time) (domain.TaskBinding, bool, error) {
+	candidate := domain.TaskBinding{
+		Context: execution, Round: round, WorkItemID: workItemID, TaskID: taskID, BoundAt: now.UTC(),
+	}
 	if err := candidate.Validate(); err != nil {
 		return domain.TaskBinding{}, false, err
 	}
@@ -220,7 +232,7 @@ func (s Store) BindTask(ctx context.Context, execution domain.ContextRef, workIt
 	created := false
 	_, err := s.UpdateRun(ctx, execution, func(run *domain.Run) error {
 		for _, binding := range run.TaskBindings {
-			if binding.WorkItemID == workItemID {
+			if binding.Round == round && binding.WorkItemID == workItemID {
 				if binding.TaskID != taskID {
 					return fmt.Errorf("%w: work item %q is already bound to task %q", ErrBindingConflict, workItemID, binding.TaskID)
 				}

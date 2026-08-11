@@ -1,6 +1,6 @@
 ---
 name: hermoso-design
-description: "Use when authoring a right-sized Hermoso feature-design and proposed construction graph. Ground every field in the live schema and stop for explicit exact-revision approval."
+description: "Use when authoring a spine-grounded Hermoso v2 feature design with stable requirements, vocabulary, and interaction surfaces before the hidden verification contract and work graph."
 version: 1.0.0
 author: Hermoso
 license: MIT
@@ -15,10 +15,11 @@ metadata:
 
 ## Overview
 
-Turn a feature objective into a validated `feature-design` and a proportional
-construction proposal. Adapt depth to risk; do not turn small work into a
-program. This skill authors artifacts but does not approve, persist, dispatch,
-or mutate Hermoso state.
+Turn a feature objective into a validated, spine-grounded `feature-design`.
+Adapt depth to risk; do not turn small work into a program. The hidden
+verification contract is authored next, and the work graph only after the
+complete package is approved.
+Never edit `.hermoso/**`; persist only through the CLI.
 
 ## Inputs
 
@@ -28,9 +29,10 @@ or mutate Hermoso state.
 - objective and constraints from the developer;
 - selected profile bindings, normally `profiles/default.yaml`.
 
-Never infer identity from cwd or conversation. At entry, before validation, and
-before handoff, refresh context, echo project/feature/run/repository, compare
-all fields and the absolute workspace, and block on any mismatch.
+Never infer identity from cwd or conversation. Pass explicit context
+(project-id, feature-id, run-id, repository) to every `hermoso` command.
+Call `hermoso context` to resolve the canonical tuple when needed. The binary
+validates context against persisted state and rejects mismatches.
 
 ## Live Contract First
 
@@ -40,7 +42,10 @@ Before drafting:
 hermoso status <repository> --json
 hermoso context <project-id> <feature-id> <run-id> <repository> --json
 hermoso schema feature-design --json
-hermoso schema work-graph --json
+hermoso schema feature-verification-contract --json
+hermoso model status <project-id> <repository> --json
+hermoso model query <project-id> <repository> orientation --json
+hermoso model query <project-id> <repository> task <feature objective> --json
 ```
 
 The checked-in Go types and examples are explanatory only. The command output
@@ -51,6 +56,11 @@ hermoso validate feature-design <feature-design-path> <project-id> <feature-id> 
 ```
 
 Validation does not persist the design.
+
+If the model is absent or stale, run `hermoso model build <project-id>
+<repository> --revision HEAD --json` before drafting. Query interface, testing,
+vocabulary, and invariant evidence by node ID. Preserve the exact snapshot
+reference in `base_model`; do not copy an unversioned prose view.
 
 ## Adaptive Discovery
 
@@ -90,14 +100,21 @@ not add a spike card as ceremony.
 - Increment revision when changing a previously presented design.
 - Keep `unresolved_questions` empty before requesting approval. If questions
   remain, ask or block; do not hide them in prose.
-- Make acceptance criteria testable and outcome-focused.
+- Give requirements and acceptance criteria stable semantic IDs; never use array
+  positions as downstream references.
+- Make acceptance criteria testable and outcome-focused, and link each one to
+  its requirement IDs.
+- Define business vocabulary IDs, preferred terms, definitions, and aliases.
+- Reference observed surfaces by exact model node ID. Declare not-yet-existing
+  API, CLI, UI, file, event, or library surfaces as planned overlays.
 - Record important tradeoffs as decisions with rationale.
 - Include research references only when their revision and SHA-256 hash are
   known.
 
 ## Propose a Right-Sized Work Graph
 
-After the design validates, sketch the likely construction:
+Only after the verification author completes the package and the package is
+approved, sketch the likely construction:
 
 - **One item:** valid for a cohesive implementation and its tests.
 - **Several independent items:** no parent links; they may run in parallel.
@@ -106,7 +123,10 @@ After the design validates, sketch the likely construction:
 - **Fan-in/integration:** add only for multiple leaves that require a real
   merge, shared validation, or synthesis.
 
-Every work item must have a profile and an ordered, non-empty skill list.
+Every work item must cite visible `requirement_ids`,
+`acceptance_criterion_ids`, and `surface_ids`, and the graph as a whole must
+cover the approved visible design. Every item must also have a profile and an
+ordered, non-empty skill list.
 Resolve them from the selected profile rather than inventing names. Typical
 implementation ordering is:
 
@@ -121,7 +141,7 @@ The proposal is review material, not yet a dispatched graph.
 
 Present:
 
-1. exact revision and, once persistence exists, its content hash;
+1. exact feature-design revision and content hash;
 2. objective and acceptance criteria;
 3. constraints, non-goals, and decisions;
 4. complexity assessment;
@@ -129,18 +149,21 @@ Present:
 6. any optional spike;
 7. important interfaces, data, rollout, or compatibility effects.
 
-Ask for explicit approval or requested changes. Do not accept ambiguous assent.
-Any edited design needs a new revision and new approval.
+Invoke `hermoso-verification-author` after `design put`. Present its coverage,
+modalities, exclusions, publication paths, and the exact resulting package
+revision/hash. Ask for explicit approval or requested changes. Do not accept
+ambiguous assent. Any edited design, verification contract, artifact, or model
+snapshot needs a new package revision and approval.
 
 Persist and approve with the complete canonical context:
 
 ```sh
 hermoso design put <project-id> <feature-id> <run-id> <repository> <feature-design-path> --json
-hermoso approve design <project-id> <feature-id> <run-id> <repository> <revision> <sha256:...> <actor> [comment] --json
+hermoso verification put <project-id> <feature-id> <run-id> <repository> <verification-contract-path> --json
+hermoso approve design <project-id> <feature-id> <run-id> <repository> <package-revision> <package-hash> <actor> [comment] --json
 ```
 
-Stop before construction until both commands confirm the exact revision and
-hash. Any later `design put` revision invalidates the prior approval.
+Stop before construction until all three commands confirm the exact package.
 
 ## Blocked Design
 
@@ -165,11 +188,13 @@ If a decision, access requirement, or experiment prevents a valid design:
 
 ## Verification Checklist
 
-- [ ] Full context came from `hermoso context`, was echoed, and matched status.
+- [ ] Full context from `hermoso context` passed explicitly to every command.
 - [ ] Absolute workspace matched the canonical repository.
-- [ ] Feature design passed live validation.
+- [ ] The knowledge spine was fresh and bounded model queries informed the design.
+- [ ] Feature design passed live validation with stable traceability IDs.
 - [ ] Complexity and graph size are proportional.
 - [ ] Every dependency is necessary.
 - [ ] Optional spike resolves a real uncertainty.
-- [ ] Exact revision was presented for explicit approval.
+- [ ] The hidden verification author completed cross-validation and sealed assets.
+- [ ] Exact package revision/hash was presented for one explicit approval.
 - [ ] Persistence and exact approval were confirmed by CLI state.

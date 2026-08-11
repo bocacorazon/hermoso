@@ -10,11 +10,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bocacorazon/hermoso/internal/digest"
 	"github.com/bocacorazon/hermoso/internal/domain"
 	"github.com/bocacorazon/hermoso/internal/testutil"
 )
 
 var stateTestTime = time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+
+func bindingWorkItem(id string) domain.WorkItem {
+	return domain.WorkItem{
+		ID: id, Title: id, Prompt: "Test " + id,
+		AcceptanceCriteria: []string{id + " works"},
+		RequirementIDs:     []string{"req-feature"},
+		CriterionIDs:       []string{"ac-feature"},
+		SurfaceIDs:         []string{"surface-feature"},
+		Worker: domain.Worker{
+			Profile: "default", Skills: []domain.SkillBinding{{Name: "test"}},
+		},
+	}
+}
 
 func TestDiscoverRepositoryCanonicalizesSubdirectory(t *testing.T) {
 	t.Parallel()
@@ -89,8 +103,8 @@ func TestLoadReportsCorruptAndIncompatibleState(t *testing.T) {
 	}{
 		{name: "corrupt JSON", content: "{", want: ErrCorruptState},
 		{name: "missing version", content: `{}`, want: ErrCorruptState},
-		{name: "unknown field", content: `{"schema_version":"1","surprise":true}`, want: ErrCorruptState},
-		{name: "incompatible version", content: `{"schema_version":"2"}`, want: ErrIncompatibleState},
+		{name: "unknown field", content: `{"schema_version":"2","surprise":true}`, want: ErrCorruptState},
+		{name: "incompatible version", content: `{"schema_version":"1"}`, want: ErrIncompatibleState},
 	}
 
 	for _, test := range tests {
@@ -271,19 +285,42 @@ func TestBindTaskIsIdempotentAndRejectsConflicts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	graph := domain.WorkGraph{
+		SchemaVersion: domain.SchemaVersion, Context: run.Context,
+		Producer: domain.Producer{Skill: "test", Runtime: "test"}, Revision: 1,
+		Items: []domain.WorkItem{
+			bindingWorkItem("api"),
+			bindingWorkItem("ui"),
+		},
+	}
+	graphHash, err := digest.JSON(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = store.UpdateRun(context.Background(), run.Context, func(run *domain.Run) error {
+		run.ConstructionRounds = []domain.ConstructionState{{
+			Number: 1, Kind: "initial",
+			SourceHash: "sha256:" + strings.Repeat("a", 64),
+			Graph:      graph, Hash: graphHash,
+		}}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	first, created, err := store.BindTask(context.Background(), run.Context, "api", "hermes-101", stateTestTime.Add(time.Minute))
+	first, created, err := store.BindTask(context.Background(), run.Context, 1, "api", "hermes-101", stateTestTime.Add(time.Minute))
 	if err != nil || !created {
 		t.Fatalf("first binding = (%#v, %t, %v)", first, created, err)
 	}
-	repeated, created, err := store.BindTask(context.Background(), run.Context, "api", "hermes-101", stateTestTime.Add(time.Hour))
+	repeated, created, err := store.BindTask(context.Background(), run.Context, 1, "api", "hermes-101", stateTestTime.Add(time.Hour))
 	if err != nil || created || repeated != first {
 		t.Fatalf("repeat = (%#v, %t, %v), want (%#v, false, nil)", repeated, created, err, first)
 	}
-	if _, _, err := store.BindTask(context.Background(), run.Context, "api", "hermes-102", stateTestTime.Add(time.Hour)); !errors.Is(err, ErrBindingConflict) {
+	if _, _, err := store.BindTask(context.Background(), run.Context, 1, "api", "hermes-102", stateTestTime.Add(time.Hour)); !errors.Is(err, ErrBindingConflict) {
 		t.Errorf("work item rebind error = %v, want ErrBindingConflict", err)
 	}
-	if _, _, err := store.BindTask(context.Background(), run.Context, "ui", "hermes-101", stateTestTime.Add(time.Hour)); !errors.Is(err, ErrBindingConflict) {
+	if _, _, err := store.BindTask(context.Background(), run.Context, 1, "ui", "hermes-101", stateTestTime.Add(time.Hour)); !errors.Is(err, ErrBindingConflict) {
 		t.Errorf("task reuse error = %v, want ErrBindingConflict", err)
 	}
 
@@ -319,7 +356,7 @@ func TestStateOperationsRejectMismatchedContext(t *testing.T) {
 	if _, err := store.UpdateRun(context.Background(), mismatch, func(*domain.Run) error { return nil }); !errors.Is(err, ErrIncompatibleState) {
 		t.Fatalf("update error = %v, want ErrIncompatibleState", err)
 	}
-	if _, _, err := store.BindTask(context.Background(), mismatch, "api", "task-1", stateTestTime); !errors.Is(err, ErrIncompatibleState) {
+	if _, _, err := store.BindTask(context.Background(), mismatch, 1, "api", "task-1", stateTestTime); !errors.Is(err, ErrIncompatibleState) {
 		t.Fatalf("binding error = %v, want ErrIncompatibleState", err)
 	}
 }

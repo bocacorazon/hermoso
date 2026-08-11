@@ -6,15 +6,17 @@ primary user experience is the Hermes TUI.
 - [Architecture](architecture.md) — responsibilities, boundaries, phase
   contracts, Kanban dispatch, and the target `.hermoso` state.
 - [Usage and workflow](usage.md) — current commands and the delivered
-  design/construction workflow.
+  design/construction/verification workflow.
+- [Feature verification contracts](verification-contracts.md) — hybrid BDD
+  contracts, traceability, hidden assets, reports, remediation, and publication.
 - [Implementation status](status.md) — what is available now and what remains
-  implemented through construction; verification and release remain future.
+  after verification; release promotion remains future.
 - [Repository knowledge spine proposal](proposals/repository-knowledge-spine.md)
   — clean-room design for an evidence-backed, agent-navigable repository model.
+- [Dependency provenance](dependencies.md) — pinned parser/indexer upstreams,
+  licenses, and build prerequisites.
 - [Archive](archive/README.md) — historical documents from Hermoso's former
   DFT/Spec Kit direction.
 
-The initial product scope is **design and construction**. Verification and
-release exist in the domain lifecycle so persisted data can evolve without a
-breaking redesign, but their operator workflows are not part of the current
-implementation.
+The current product scope is **design, construction, and verification**.
+Release promotion is the remaining lifecycle boundary.

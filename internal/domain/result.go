@@ -106,7 +106,7 @@ type Approval struct {
 	Context       ContextRef `json:"context"`
 	Phase         Phase      `json:"phase"`
 	Revision      uint64     `json:"revision"`
-	ContractHash  string     `json:"contract_hash"`
+	PackageHash   string     `json:"package_hash"`
 	Actor         string     `json:"actor"`
 	ApprovedAt    time.Time  `json:"approved_at"`
 	Comment       string     `json:"comment,omitempty"`
@@ -122,8 +122,8 @@ func (a Approval) Validate() error {
 	if a.Revision == 0 {
 		errs.add("revision", "must be greater than zero")
 	}
-	if !hashPattern.MatchString(a.ContractHash) {
-		errs.add("contract_hash", "must use sha256:<64 lowercase hex characters>")
+	if !hashPattern.MatchString(a.PackageHash) {
+		errs.add("package_hash", "must use sha256:<64 lowercase hex characters>")
 	}
 	validateRequired("actor", a.Actor, &errs)
 	if a.ApprovedAt.IsZero() {
@@ -132,7 +132,7 @@ func (a Approval) Validate() error {
 	return validationResult(errs)
 }
 
-func (a Approval) ValidateContract(phase Phase, revision uint64, hash string) error {
+func (a Approval) ValidatePackage(phase Phase, revision uint64, hash string) error {
 	if err := a.Validate(); err != nil {
 		return err
 	}
@@ -142,8 +142,8 @@ func (a Approval) ValidateContract(phase Phase, revision uint64, hash string) er
 	if a.Revision != revision {
 		return fmt.Errorf("approval revision %d does not match %d", a.Revision, revision)
 	}
-	if a.ContractHash != hash {
-		return fmt.Errorf("approval hash does not match current contract")
+	if a.PackageHash != hash {
+		return fmt.Errorf("approval hash does not match current package")
 	}
 	return nil
 }

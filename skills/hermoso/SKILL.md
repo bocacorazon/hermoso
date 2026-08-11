@@ -1,6 +1,6 @@
 ---
 name: hermoso
-description: "Use when coordinating a Hermoso feature from the Hermes TUI. Inspect live state, enforce design approval, and route design and construction without bypassing the Hermoso CLI."
+description: "Use when coordinating a Hermoso feature from spine-grounded design through atomic contract approval, construction, verification/remediation, and Gherkin publication."
 version: 1.0.0
 author: Hermoso
 license: MIT
@@ -8,7 +8,7 @@ platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [hermoso, tui, orchestration, design, construction, kanban]
-    related_skills: [hermoso-design, hermoso-construction]
+    related_skills: [hermoso-design, hermoso-verification-author, hermoso-construction, hermoso-verification]
 ---
 
 # Hermoso TUI Controller
@@ -28,7 +28,8 @@ operation starts from an explicit repository and run, refreshed with
 
 - Starting, inspecting, or resuming a Hermoso feature.
 - Routing an approved design into construction.
-- Presenting blockers, approval requests, or construction progress.
+- Presenting blockers, approval requests, construction progress, or
+  verification reports.
 
 Do not use this skill as a generic project manager or as permission to install
 files into a target repository.
@@ -56,13 +57,15 @@ hermoso start <feature-id> /absolute/target/repository --json
 hermoso status /absolute/target/repository --json
 hermoso context <project-id> <feature-id> <run-id> /absolute/target/repository --json
 hermoso schema feature-design --json
+hermoso schema feature-verification-contract --json
 hermoso schema work-graph --json
 hermoso schema phase-result --json
 hermoso validate feature-design <path> <project-id> <feature-id> <run-id> /absolute/target/repository --json
 hermoso validate work-graph <path> <project-id> <feature-id> <run-id> /absolute/target/repository --json
 hermoso validate phase-result <path> <project-id> <feature-id> <run-id> /absolute/target/repository --json
 hermoso design put <project-id> <feature-id> <run-id> /absolute/target/repository <path> --json
-hermoso approve design <project-id> <feature-id> <run-id> /absolute/target/repository <revision> <hash> <actor> [comment] --json
+hermoso verification put <project-id> <feature-id> <run-id> /absolute/target/repository <path> --json
+hermoso approve design <project-id> <feature-id> <run-id> /absolute/target/repository <package-revision> <package-hash> <actor> [comment] --json
 hermoso graph put <project-id> <feature-id> <run-id> /absolute/target/repository <path> --json
 hermoso construction prepare <project-id> <feature-id> <run-id> /absolute/target/repository <profile-path> --json
 hermoso construction ready <project-id> <feature-id> <run-id> /absolute/target/repository --json
@@ -72,6 +75,7 @@ hermoso work start <project-id> <feature-id> <run-id> /absolute/target/repositor
 hermoso work complete <project-id> <feature-id> <run-id> /absolute/target/repository <work-item-id> <evidence-id> <summary> <command> --json
 hermoso work block <project-id> <feature-id> <run-id> /absolute/target/repository <work-item-id> <evidence-id> <reason> <command> --json
 hermoso result put <project-id> <feature-id> <run-id> /absolute/target/repository <path> --json
+hermoso verification run <project-id> <feature-id> <run-id> /absolute/target/repository --json
 hermoso resume <project-id> <feature-id> <run-id> /absolute/target/repository --json
 ```
 
@@ -84,24 +88,28 @@ hermoso resume <project-id> <feature-id> <run-id> /absolute/target/repository --
    available `hermoso init <repo> --json`.
 3. If no matching run exists, run the available
    `hermoso start <feature-id> <repo> --json`.
-4. Resolve `hermoso context`, echo all four identities, and compare them with
-   status. Block on any mismatch.
+4. Resolve `hermoso context <project-id> <feature-id> <run-id> <repository> --json` for canonical identity. Pass these explicit values to every subsequent command — the binary validates the context against persisted state and rejects mismatches.
 5. Invoke `hermoso-design` with the complete context, absolute workspace,
    objective, and
    `profiles/default.yaml` bindings.
-6. Present the validated design, including acceptance criteria, non-goals,
-   decisions, risks, and proposed construction shape.
-7. Require an explicit user approval of the exact design revision. Silence,
+6. Invoke `hermoso-verification-author` to create and ingest the hidden contract
+   and sealed assets before any work graph is authored.
+7. Present the visible design plus verification coverage/modalities/exclusions
+   and exact package revision/hash.
+8. Require an explicit user approval of that exact package. Silence,
    earlier approval, approval of a summary, or “continue” before review is not
    approval.
-8. If changes are requested, revise and validate again. The previous approval
+9. If changes are requested, revise and validate again. The previous approval
    is stale.
-9. Invoke `hermoso-construction` only after exact-revision approval is durably
+10. Invoke `hermoso-construction` only after exact-package approval is durably
    recorded by `hermoso approve design`.
-10. Refresh `hermoso status --json` after every persisted transition and before
-   declaring completion. At every phase boundary, refresh `hermoso context`,
-   echo the full tuple and absolute workspace, compare them, and block on any
-   mismatch.
+11. At `awaiting_verification`, invoke `hermoso-verification`. Route its one
+   automatic remediation round through construction, or surface a second
+   failure/block. A pass publishes approved Gherkin and reaches
+   `awaiting_release`.
+12. Refresh `hermoso status --json` after every persisted transition and before
+   declaring completion. Pass explicit context to every command — the binary
+   rejects mismatches against persisted state.
 
 ## Explicit Approval Gate
 
@@ -109,12 +117,12 @@ Persist and approve only through the CLI:
 
 ```sh
 hermoso design put <project-id> <feature-id> <run-id> <repository> <feature-design-path> --json
-hermoso approve design <project-id> <feature-id> <run-id> <repository> <revision> <sha256:...> <actor> [comment] --json
+hermoso verification put <project-id> <feature-id> <run-id> <repository> <verification-contract-path> --json
+hermoso approve design <project-id> <feature-id> <run-id> <repository> <package-revision> <package-hash> <actor> [comment] --json
 ```
 
-The implementation must reject an approval whose revision or hash differs from
-the current persisted design, or whose full context differs from project/run
-state.
+The implementation rejects approval until both package parts cross-validate,
+and rejects any revision/hash or context mismatch.
 
 ## Right-Sized Design
 
@@ -159,6 +167,8 @@ validate it, then persist it with `hermoso result put` using the full context.
 - [ ] Contracts came from the live `schema` command.
 - [ ] Authored contracts passed the live `validate` command.
 - [ ] No `.hermoso` file was edited directly.
-- [ ] Exact design approval is durable before dispatch.
+- [ ] Exact complete design-package approval is durable before dispatch.
+- [ ] Hidden verifier content was not sent to build agents.
+- [ ] Every verification attempt produced a persisted report.
 - [ ] Kanban blockers and completions reflect reality.
 - [ ] Delivered commands were invoked with the complete canonical context.

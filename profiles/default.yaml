@@ -9,8 +9,12 @@
     },
     "design": {
       "profile": "default",
-      "skills": ["hermoso-design"],
+      "skills": ["hermoso-design", "hermoso-verification-author"],
       "optional_spike_skill": "spike"
+    },
+    "verification_contract": {
+      "profile": "default",
+      "skills": ["hermoso-verification-author"]
     },
     "construction": {
       "orchestrator_profile": "default",
@@ -22,6 +26,10 @@
       "profile": "default",
       "skills": ["hermoso-construction", "test-driven-development", "systematic-debugging"],
       "goal_mode": "integration"
+    },
+    "verification": {
+      "profile": "default",
+      "skills": ["hermoso-verification", "systematic-debugging"]
     }
   },
   "dispatch": {

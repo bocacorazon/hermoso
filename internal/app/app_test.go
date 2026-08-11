@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bocacorazon/hermoso/internal/digest"
+	"github.com/bocacorazon/hermoso/internal/domain"
+	"github.com/bocacorazon/hermoso/internal/state"
 	"github.com/bocacorazon/hermoso/internal/testutil"
 )
 
@@ -97,7 +100,7 @@ func TestRunSchemaCommands(t *testing.T) {
 	if err := json.Unmarshal(textOut.Bytes(), &schema); err != nil {
 		t.Fatalf("text schema is not JSON: %v", err)
 	}
-	if schema["$id"] != "https://hermoso.dev/schemas/v1/feature-design.json" {
+	if schema["$id"] != "https://hermoso.dev/schemas/v2/feature-design.json" {
 		t.Errorf("$id = %v", schema["$id"])
 	}
 
@@ -254,6 +257,7 @@ func TestRunDesignConstructionCommands(t *testing.T) {
 	if code := Run(context.Background(), []string{"init", repo.Root, "--json"}, deps); code != ExitOK {
 		t.Fatalf("init: code=%d output=%s", code, depsOut.String())
 	}
+
 	depsOut.Reset()
 	if code := Run(context.Background(), []string{"start", "feature-cli", repo.Root, "--json"}, deps); code != ExitOK {
 		t.Fatalf("start: code=%d output=%s", code, depsOut.String())
@@ -268,6 +272,7 @@ func TestRunDesignConstructionCommands(t *testing.T) {
 		execution["run_id"].(string), repo.Root,
 	}
 	writeContextFixture(t, repo, "../contracts/testdata/feature-design.valid.json", "design.json", execution)
+	seedModelForDesign(t, repo, execution, filepath.Join(repo.Root, "design.json"))
 	depsOut.Reset()
 	args := append([]string{"design", "put"}, full...)
 	args = append(args, filepath.Join(repo.Root, "design.json"), "--json")
@@ -279,10 +284,27 @@ func TestRunDesignConstructionCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	design := persisted.Data["design"].(map[string]any)
-	contract := design["contract"].(map[string]any)
+	writeVerificationFixture(t, repo, design)
+	depsOut.Reset()
+	args = append([]string{"verification", "put"}, full...)
+	args = append(args, filepath.Join(repo.Root, "verification.json"), "--json")
+	if code := Run(context.Background(), args, deps); code != ExitOK {
+		t.Fatalf("verification put: code=%d output=%s", code, depsOut.String())
+	}
+	var verification response
+	if err := json.Unmarshal(depsOut.Bytes(), &verification); err != nil {
+		t.Fatal(err)
+	}
+	design = verification.Data["design"].(map[string]any)
 	depsOut.Reset()
 	args = append([]string{"approve", "design"}, full...)
-	args = append(args, fmt.Sprintf("%.0f", contract["revision"].(float64)), design["hash"].(string), "cli-test", "--json")
+	args = append(
+		args,
+		fmt.Sprintf("%.0f", design["revision"].(float64)),
+		design["package_hash"].(string),
+		"cli-test",
+		"--json",
+	)
 	if code := Run(context.Background(), args, deps); code != ExitOK {
 		t.Fatalf("approve: code=%d output=%s", code, depsOut.String())
 	}
@@ -318,6 +340,60 @@ func TestRunDesignConstructionCommands(t *testing.T) {
 	}
 }
 
+func TestRunModelCommandsReportFreshnessAndQueries(t *testing.T) {
+	t.Parallel()
+	repo := testutil.NewRepository(t)
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	deps := testDependencies(stdout, stderr)
+	if code := Run(context.Background(), []string{"init", repo.Root, "--json"}, deps); code != ExitOK {
+		t.Fatalf("init: code=%d output=%s", code, stdout.String())
+	}
+	var initialized response
+	if err := json.Unmarshal(stdout.Bytes(), &initialized); err != nil {
+		t.Fatal(err)
+	}
+	projectID := initialized.Data["project"].(map[string]any)["project_id"].(string)
+
+	stdout.Reset()
+	if code := Run(context.Background(), []string{"model", "build", projectID, repo.Root, "--json"}, deps); code != ExitOK {
+		t.Fatalf("model build: code=%d output=%s", code, stdout.String())
+	}
+	var built response
+	if err := json.Unmarshal(stdout.Bytes(), &built); err != nil {
+		t.Fatal(err)
+	}
+	if built.Data["snapshot"].(map[string]any)["snapshot_id"] == "" {
+		t.Fatalf("build response = %#v", built)
+	}
+
+	stdout.Reset()
+	if code := Run(context.Background(), []string{"model", "query", projectID, repo.Root, "orientation", "--json"}, deps); code != ExitOK {
+		t.Fatalf("model query: code=%d output=%s", code, stdout.String())
+	}
+	var queried response
+	if err := json.Unmarshal(stdout.Bytes(), &queried); err != nil {
+		t.Fatal(err)
+	}
+	if queried.Data["fresh"] != true || queried.Data["result"] == nil {
+		t.Fatalf("query response = %#v", queried)
+	}
+
+	repo.Write("CHANGE.md", "# Change\n")
+	repo.Commit("change repository")
+	stdout.Reset()
+	if code := Run(context.Background(), []string{"model", "status", projectID, repo.Root, "--json"}, deps); code != ExitOK {
+		t.Fatalf("model status: code=%d output=%s", code, stdout.String())
+	}
+	var status response
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	modelStatus := status.Data["model"].(map[string]any)
+	if modelStatus["fresh"] != false || len(modelStatus["stale_reasons"].([]any)) == 0 {
+		t.Fatalf("status response = %#v", status)
+	}
+}
+
 func testDependencies(stdout, stderr *bytes.Buffer) Dependencies {
 	return Dependencies{
 		Stdin:   strings.NewReader(""),
@@ -350,4 +426,103 @@ func writeContextFixture(t *testing.T, repo *testutil.Repository, source, destin
 		t.Fatal(err)
 	}
 	repo.Write(destination, string(encoded)+"\n")
+}
+
+func seedModelForDesign(
+	t *testing.T,
+	repo *testutil.Repository,
+	execution map[string]any,
+	designPath string,
+) {
+	t.Helper()
+	var contextRef domain.ContextRef
+	decodeMap(t, execution, &contextRef)
+	store, _, err := state.Load(context.Background(), repo.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := testutil.ModelSnapshot(t, contextRef)
+	if _, _, err := store.PutModelSnapshot(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(designPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var design map[string]any
+	if err := json.Unmarshal(data, &design); err != nil {
+		t.Fatal(err)
+	}
+	var reference map[string]any
+	decodeMap(t, testutil.ModelReference(snapshot), &reference)
+	design["base_model"] = reference
+	encoded, err := json.MarshalIndent(design, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(designPath, append(encoded, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeVerificationFixture(t *testing.T, repo *testutil.Repository, designState map[string]any) {
+	t.Helper()
+	var design domain.FeatureDesign
+	decodeMap(t, designState["feature_design"], &design)
+	feature := []byte(`@requirement:req-reject-malformed @requirement:req-accept-valid @criterion:ac-reject-malformed @criterion:ac-accept-valid @surface:surface-schema-cli @term:term-contract
+Feature: Validate phase contracts
+
+  @scenario:scenario-validate-contract @judgment:judgment-validate-contract
+  Scenario: Distinguish valid and malformed contracts
+    Given a phase contract
+    When the contract is validated
+    Then valid contracts are accepted and malformed contracts are rejected
+`)
+	repo.Write("features/contract.feature", string(feature))
+	contract := domain.FeatureVerificationContract{
+		SchemaVersion: domain.SchemaVersion,
+		Context:       design.Context,
+		Producer: domain.Producer{
+			Skill: "hermoso-verification-author", Runtime: "test",
+		},
+		Revision: 1,
+		FeatureDesign: domain.ContractReference{
+			Context: design.Context, Kind: "feature-design", Path: "design.json",
+			Revision: design.Revision, Hash: designState["feature_hash"].(string),
+		},
+		BaseModel: design.BaseModel,
+		Artifacts: []domain.VerificationArtifact{{
+			ID: "artifact-contract", Kind: "gherkin", Path: "features/contract.feature",
+			ContentHash: digest.Bytes(feature), PublicationPath: "features/contract.feature",
+		}},
+		Judgments: []domain.VerificationJudgment{{
+			ID: "judgment-validate-contract", Title: "Validate phase contracts", Modality: "bdd",
+			RequirementIDs:         []string{"req-reject-malformed", "req-accept-valid"},
+			AcceptanceCriterionIDs: []string{"ac-reject-malformed", "ac-accept-valid"},
+			SurfaceIDs:             []string{"surface-schema-cli"},
+			BusinessTermIDs:        []string{"term-contract"},
+			ArtifactIDs:            []string{"artifact-contract"},
+			ScenarioIDs:            []string{"scenario-validate-contract"},
+			Execution:              domain.VerificationExecution{Command: []string{"go", "test", "./..."}, TimeoutSeconds: 300},
+			Oracle:                 domain.VerificationOracle{Type: "gherkin"},
+			RequiredEvidence:       []string{"scenario result", "command output"},
+		}},
+		Aggregation: domain.VerificationAggregation{Strategy: "all_required"},
+	}
+	encoded, err := json.MarshalIndent(contract, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.Write("verification.json", string(encoded)+"\n")
+}
+
+func decodeMap(t *testing.T, input any, output any) {
+	t.Helper()
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, output); err != nil {
+		t.Fatal(err)
+	}
 }

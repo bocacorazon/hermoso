@@ -4,6 +4,11 @@ These source-controlled skills are loaded from this repository. They are not
 copied into target repositories and they never install or edit target
 `.hermoso` state.
 
+The lifecycle skills are `hermoso`, `hermoso-design`,
+`hermoso-verification-author`, `hermoso-construction`, and
+`hermoso-verification`. The verification-author and verifier are separate roles
+so construction contexts never receive hidden contract assets.
+
 ## One-time Hermes setup
 
 Add this repository's `skills` directory to the user's existing Hermes config:
@@ -46,8 +51,9 @@ visibility, Kanban CLI/toolset, and gateway readiness. `--static` performs only
 repository checks and is suitable for CI.
 
 Every skill invocation must receive an explicit run ID, canonical repository,
-and absolute workspace. Refresh `hermoso context <project-id> <feature-id> <run-id> <repository> --json`
-at phase/card boundaries; never infer identity from cwd or conversation.
+and absolute workspace. Pass explicit context to every `hermoso` command; the
+binary validates context against persisted state and rejects mismatches. Never
+infer identity from cwd or conversation.
 
 Hermes caches loaded skills for a session. Start a new Hermes session after
 changing `skills.external_dirs`, replacing a skill directory, changing the

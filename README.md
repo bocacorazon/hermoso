@@ -1,9 +1,10 @@
 # Hermoso
 
 Hermoso is a Go control plane for a **Hermes TUI-first** development workflow.
-Hermes skills perform design and construction reasoning, Hermes Kanban dispatches
-workers, and the `hermoso` CLI owns deterministic contracts, identity, approvals,
-Git worktrees, durable state, evidence, and recovery.
+Hermes skills perform design, construction, and verification reasoning, Hermes
+Kanban dispatches workers, and the `hermoso` CLI owns deterministic contracts,
+the repository knowledge spine, identity, approvals, Git worktrees, durable
+state, evidence, and recovery.
 
 Hermoso is not another chat UI, an LLM client, a worker, or a Kanban
 implementation. Skills use the CLI's JSON output; operators may use its text
@@ -36,10 +37,10 @@ hermoso status /absolute/repository --json
 hermoso context <project-id> <feature-id> <run-id> /absolute/repository --json
 ```
 
-The delivered workflow covers design, exact approval, construction dispatch,
-work completion, fan-in integration, blockers/resume, and a terminal
-`awaiting_verification` state. Verification and release commands are future
-work.
+The delivered workflow covers spine-grounded design, a hidden hybrid BDD
+verification contract, atomic package approval, construction dispatch,
+read-only verification, one remediation cycle, and allowlisted Gherkin
+publication into a refreshed spine. Release promotion remains future work.
 
 ## CLI conventions
 
@@ -56,5 +57,6 @@ Use `hermoso help` for the authoritative command list.
 
 - [Setup, TUI/CLI workflow, and recovery](docs/usage.md)
 - [Architecture and identity boundaries](docs/architecture.md)
+- [Verification contracts, reports, remediation, and publication](docs/verification-contracts.md)
 - [Available and planned functionality](docs/status.md)
 - [Historical archive](docs/archive/README.md)

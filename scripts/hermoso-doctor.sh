@@ -12,7 +12,9 @@ fail() { printf 'error: %s\n' "$1" >&2; failures=$((failures + 1)); }
 for path in \
   "$root/skills/hermoso/SKILL.md" \
   "$root/skills/hermoso-design/SKILL.md" \
+  "$root/skills/hermoso-verification-author/SKILL.md" \
   "$root/skills/hermoso-construction/SKILL.md" \
+  "$root/skills/hermoso-verification/SKILL.md" \
   "$profile"
 do
   [ -f "$path" ] || fail "missing $path"
@@ -25,6 +27,8 @@ p = pathlib.Path(sys.argv[1])
 d = json.loads(p.read_text())
 assert d["schema_version"] == "hermoso-profile/v1"
 assert d["phases"]["construction"]["worker_skills"]
+assert d["phases"]["verification_contract"]["skills"]
+assert d["phases"]["verification"]["skills"]
 assert d["dispatch"]["tenant_strategy"] == "project-derived"
 PY
   then pass "profile JSON is structurally valid"
@@ -60,7 +64,8 @@ p=d["phases"]
 print(" ".join(sorted(set([
  p["controller"]["profile"], p["design"]["profile"],
  p["construction"]["orchestrator_profile"], p["construction"]["worker_profile"],
- p["integration"]["profile"],
+ p["integration"]["profile"], p["verification_contract"]["profile"],
+ p["verification"]["profile"],
 ]))))
 PY
   ); do

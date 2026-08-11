@@ -29,18 +29,20 @@ Skills and the CLI communicate through versioned JSON contracts:
   task binding, dispatch identity, and card body. Identity is never inferred
   from cwd or conversation.
 
-- **`feature-design`**: objective, acceptance criteria, constraints, decisions,
-  non-goals, complexity, architecture/interface notes, and research references.
-  A valid design has no unresolved questions.
+- **`feature-design` v2**: stable requirements and acceptance criteria,
+  business vocabulary, constraints, decisions, and existing/planned interaction
+  surfaces bound to an immutable repository-model snapshot.
+- **`feature-verification-contract`**: hidden hybrid BDD, deterministic,
+  property, and rubric judgments plus hash-locked verifier assets and complete
+  requirement/surface traceability.
 - **`work-graph`**: an acyclic construction graph. Each item declares its
-  prompt, acceptance criteria, parent items, worker profile, ordered skills,
-  expected changed surfaces, validation commands, and optional runtime budget.
+  visible requirement, criterion, and surface IDs in addition to its prompt,
+  local criteria, dependencies, worker bindings, commands, and budget.
 - **`phase-result`**: a terminal result for a phase, with input/output
   references, decisions, warnings, blockers, evidence, and completion time.
 
-Contract references include a revision and SHA-256 content hash. Design
-approval is therefore attached to the exact reviewed revision and hash; editing
-the design invalidates the old approval.
+One design-package approval binds the design, verification contract, sealed
+artifact root, and model snapshot hashes. Editing any input invalidates it.
 
 Each project has a deterministic Kanban tenant derived from `project_id`.
 Dispatch idempotency includes the complete context, and card lifecycle commands
@@ -50,9 +52,17 @@ the same feature can coexist without sharing a feature, item, or integration
 branch. Separate repositories provide the project boundary; feature and run
 identity provide isolation inside one repository.
 
-The lifecycle models `design`, `construction`, `verification`, and `release`.
-The approved first scope exposes the design and construction workflow.
-Verification and release are reserved for later commands.
+The lifecycle models `design`, ordered initial/remediation construction rounds,
+up to two verification attempts, Gherkin publication, and `release`.
+
+## Repository knowledge spine
+
+`.hermoso/model` contains immutable, content-addressed repository snapshots.
+Git and manifest inventory, Tree-sitter structure for Go/JavaScript/TypeScript/
+TSX/Python, optional SCIP data, testing surfaces, commands, interfaces,
+vocabulary, provenance, and bounded views give design and verification a common
+repository model. Contracts cite exact snapshot/source/vocabulary hashes;
+stale snapshots are rejected.
 
 ## `.hermoso` state
 
@@ -63,6 +73,11 @@ construction result:
 
 ```text
 .hermoso/
+├── model/
+│   ├── current.json
+│   └── snapshots/<snapshot-id>/
+├── artifacts/<run-id>/<root-hash>/
+├── verification/<run-id>/attempt-<n>/assets/
 ├── project.json
 ├── state.lock
 ├── runs/
@@ -88,20 +103,22 @@ managed Git work.
 ```text
 Hermes conversation
   -> design skill
-  -> Hermoso validates and persists feature-design
-  -> developer approves exact design revision
+  -> Hermoso validates feature-design against a fresh spine snapshot
+  -> verification author seals the hidden contract and assets
+  -> developer approves the exact atomic design package
   -> construction skill creates work-graph
   -> Hermes Kanban creates and dispatches tasks
   -> workers return evidence/results
   -> Hermoso integrates leaves and validates the construction result
-  -> run waits at awaiting_verification
+  -> isolated read-only verification attempt
+     -> pass: publish approved Gherkin and refresh spine
+     -> first fail: one sanitized remediation round and second attempt
+     -> second fail or invalid attempt: blocked
 ```
 
 Skills own judgment and presentation. Hermoso owns deterministic invariants.
 Kanban owns dispatch. Keeping those boundaries explicit avoids duplicating
 Hermes while making runs inspectable and resumable.
 
-Future verification will consume the immutable construction result and evidence
-without weakening the context boundary. Future release will act only on a
-verified run and will own promotion/release evidence; neither phase has CLI
-commands today.
+Verification commands and reports are implemented. Release promotion remains a
+separate future boundary and may act only after `awaiting_release`.

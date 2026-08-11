@@ -10,7 +10,8 @@ const (
 func featureDesignSchema() map[string]any {
 	schema := rootSchema(FeatureDesign, []string{
 		"schema_version", "context", "producer", "revision", "feature",
-		"acceptance_criteria", "unresolved_questions", "complexity",
+		"base_model", "requirements", "acceptance_criteria", "interaction_surfaces",
+		"unresolved_questions", "complexity",
 	})
 	schema["properties"] = map[string]any{
 		"schema_version": constant(domain.SchemaVersion),
@@ -23,7 +24,11 @@ func featureDesignSchema() map[string]any {
 			"objective":         nonEmptyString(),
 			"target_repository": ref("target"),
 		}),
-		"acceptance_criteria":         nonEmptyStringArray(1),
+		"base_model":                  ref("model_reference"),
+		"requirements":                array(ref("requirement"), 1),
+		"acceptance_criteria":         array(ref("acceptance_criterion"), 1),
+		"business_vocabulary":         array(ref("business_term"), 0),
+		"interaction_surfaces":        array(ref("feature_surface"), 1),
 		"constraints":                 nonEmptyStringArray(0),
 		"non_goals":                   nonEmptyStringArray(0),
 		"decisions":                   array(object([]string{"decision", "rationale"}, map[string]any{"decision": nonEmptyString(), "rationale": nonEmptyString()}), 0),
@@ -38,6 +43,85 @@ func featureDesignSchema() map[string]any {
 	return schema
 }
 
+func featureVerificationContractSchema() map[string]any {
+	schema := rootSchema(FeatureVerificationContract, []string{
+		"schema_version", "context", "producer", "revision", "feature_design",
+		"base_model", "artifacts", "judgments", "aggregation",
+	})
+	schema["properties"] = map[string]any{
+		"schema_version": constant(domain.SchemaVersion),
+		"context":        ref("context"),
+		"producer":       ref("producer"),
+		"revision":       positiveInteger(),
+		"feature_design": ref("reference"),
+		"base_model":     ref("model_reference"),
+		"artifacts": array(object(
+			[]string{"id", "kind", "path", "content_hash"},
+			map[string]any{
+				"id": id(), "kind": map[string]any{"enum": []string{"gherkin", "fixture", "probe", "generated_test"}},
+				"path": nonEmptyString(), "content_hash": map[string]any{"type": "string", "pattern": hashPattern},
+				"publication_path": nonEmptyString(),
+			},
+		), 1),
+		"judgments": array(object(
+			[]string{
+				"id", "title", "modality", "requirement_ids", "acceptance_criterion_ids",
+				"surface_ids", "execution", "oracle", "required_evidence",
+			},
+			map[string]any{
+				"id": id(), "title": nonEmptyString(),
+				"modality":                 map[string]any{"enum": []string{"bdd", "deterministic", "property", "rubric"}},
+				"requirement_ids":          uniqueIDArrayAtLeast(1),
+				"acceptance_criterion_ids": uniqueIDArrayAtLeast(1),
+				"surface_ids":              uniqueIDArrayAtLeast(1),
+				"business_term_ids":        uniqueIDArray(),
+				"invariant_node_ids":       nonEmptyStringArray(0),
+				"artifact_ids":             uniqueIDArray(),
+				"scenario_ids":             uniqueIDArray(),
+				"execution": object(
+					[]string{"command", "timeout_seconds"},
+					map[string]any{
+						"command": nonEmptyStringArray(1), "working_directory": nonEmptyString(),
+						"timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 3600},
+					},
+				),
+				"oracle": object(
+					[]string{"type"},
+					map[string]any{
+						"type":     map[string]any{"enum": []string{"exit_code", "json_path", "stdout_regex", "file", "gherkin", "rubric"}},
+						"expected": nonEmptyString(),
+					},
+				),
+				"required_evidence": nonEmptyStringArray(1),
+				"property": object(
+					[]string{"seed", "iterations"},
+					map[string]any{
+						"seed":       map[string]any{"type": "integer", "minimum": 0},
+						"iterations": map[string]any{"type": "integer", "minimum": 1, "maximum": 10000},
+					},
+				),
+				"rubric": object(
+					[]string{"judge", "criteria"},
+					map[string]any{"judge": nonEmptyString(), "criteria": nonEmptyStringArray(1)},
+				),
+			},
+		), 1),
+		"coverage_exclusions": array(object(
+			[]string{"target_kind", "target_id", "rationale"},
+			map[string]any{
+				"target_kind": map[string]any{"enum": []string{"requirement", "acceptance_criterion"}},
+				"target_id":   id(), "rationale": nonEmptyString(),
+			},
+		), 0),
+		"aggregation": object(
+			[]string{"strategy"},
+			map[string]any{"strategy": constant("all_required")},
+		),
+	}
+	schema["$defs"] = definitions()
+	return schema
+}
+
 func workGraphSchema() map[string]any {
 	schema := rootSchema(WorkGraph, []string{"schema_version", "context", "producer", "revision", "items"})
 	schema["properties"] = map[string]any{
@@ -46,12 +130,18 @@ func workGraphSchema() map[string]any {
 		"producer":       ref("producer"),
 		"revision":       positiveInteger(),
 		"items": array(object(
-			[]string{"id", "title", "prompt", "acceptance_criteria", "worker"},
+			[]string{
+				"id", "title", "prompt", "acceptance_criteria", "requirement_ids",
+				"acceptance_criterion_ids", "surface_ids", "worker",
+			},
 			map[string]any{
 				"id":                        id(),
 				"title":                     nonEmptyString(),
 				"prompt":                    nonEmptyString(),
 				"acceptance_criteria":       nonEmptyStringArray(1),
+				"requirement_ids":           uniqueIDArrayAtLeast(1),
+				"acceptance_criterion_ids":  uniqueIDArrayAtLeast(1),
+				"surface_ids":               uniqueIDArrayAtLeast(1),
 				"parents":                   uniqueIDArray(),
 				"worker":                    ref("worker"),
 				"expected_changed_surfaces": nonEmptyStringArray(0),
@@ -100,7 +190,7 @@ func phaseResultSchema() map[string]any {
 func rootSchema(kind Kind, required []string) map[string]any {
 	return map[string]any{
 		"$schema":              "https://json-schema.org/draft/2020-12/schema",
-		"$id":                  "https://hermoso.dev/schemas/v1/" + string(kind) + ".json",
+		"$id":                  "https://hermoso.dev/schemas/v" + domain.SchemaVersion + "/" + string(kind) + ".json",
 		"title":                string(kind),
 		"type":                 "object",
 		"additionalProperties": false,
@@ -137,6 +227,47 @@ func definitions() map[string]any {
 			"summary": nonEmptyString(), "content_hash": map[string]any{"type": "string", "pattern": hashPattern},
 			"recorded_at": map[string]any{"type": "string", "format": "date-time"},
 		}),
+		"model_reference": object(
+			[]string{"schema_version", "snapshot_id", "content_hash", "source_revision", "vocabulary_version"},
+			map[string]any{
+				"schema_version":     constant(domain.ModelSchemaVersion),
+				"snapshot_id":        map[string]any{"type": "string", "pattern": "^model-[0-9a-f]{32}$"},
+				"content_hash":       map[string]any{"type": "string", "pattern": hashPattern},
+				"source_revision":    map[string]any{"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+				"vocabulary_version": nonEmptyString(),
+			},
+		),
+		"requirement": object(
+			[]string{"id", "title", "statement", "kind", "priority"},
+			map[string]any{
+				"id": id(), "title": nonEmptyString(), "statement": nonEmptyString(),
+				"kind":      map[string]any{"enum": []string{"functional", "non_functional", "security", "compatibility", "structural"}},
+				"priority":  map[string]any{"enum": []string{"must", "should", "could"}},
+				"rationale": nonEmptyString(),
+			},
+		),
+		"acceptance_criterion": object(
+			[]string{"id", "statement", "requirement_ids"},
+			map[string]any{
+				"id": id(), "statement": nonEmptyString(), "requirement_ids": uniqueIDArrayAtLeast(1),
+			},
+		),
+		"business_term": object(
+			[]string{"id", "term", "definition"},
+			map[string]any{
+				"id": id(), "term": nonEmptyString(), "definition": nonEmptyString(),
+				"aliases": nonEmptyStringArray(0),
+			},
+		),
+		"feature_surface": object(
+			[]string{"id", "title", "kind", "source", "description"},
+			map[string]any{
+				"id": id(), "title": nonEmptyString(),
+				"kind":          map[string]any{"enum": []string{"api", "cli", "ui", "file", "event", "library"}},
+				"source":        map[string]any{"enum": []string{"existing", "planned"}},
+				"model_node_id": nonEmptyString(), "description": nonEmptyString(),
+			},
+		),
 	}
 }
 
@@ -162,6 +293,12 @@ func nonEmptyStringArray(minimum int) map[string]any {
 
 func uniqueIDArray() map[string]any {
 	result := array(id(), 0)
+	result["uniqueItems"] = true
+	return result
+}
+
+func uniqueIDArrayAtLeast(minimum int) map[string]any {
+	result := array(id(), minimum)
 	result["uniqueItems"] = true
 	return result
 }

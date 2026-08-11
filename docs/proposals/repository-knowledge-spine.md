@@ -185,9 +185,9 @@ Each spine node has a small common vocabulary:
 
 | Facet | Examples |
 | --- | --- |
-| `kind` | file, symbol, component, domain, interface, decision, command, concept |
+| `kind` | repository, file, symbol, component, interface, test, command, concept, invariant, requirement, scenario |
 | `abstraction` | system, container, component, code |
-| `aspect` | structure, runtime, data, API, testing, operations, security |
+| `aspect` | structure, runtime, data, API, testing, operations, security, vocabulary |
 | `epistemic_status` | observed, derived, draft, working, stable, canonical, deprecated |
 | `audience` | agent, developer, operator, user |
 | `document_type` | tutorial, how-to, reference, explanation |
@@ -202,27 +202,43 @@ tool-independent:
 
 ```text
 .hermoso/model/
-├── manifest.json
-├── vocabulary.json
-├── nodes.jsonl
-├── edges.jsonl
-├── index.md
-├── views/
-│   ├── system-context.md
-│   ├── domains.md
-│   ├── components.md
-│   ├── runtime.md
-│   ├── data.md
-│   ├── interfaces.md
-│   ├── testing.md
-│   ├── operations.md
-│   └── decisions.md
+├── current.json
+├── snapshots/<snapshot-id>/
+│   ├── manifest.json
+│   ├── vocabulary.json
+│   ├── nodes.jsonl
+│   ├── edges.jsonl
+│   ├── index.md
+│   └── views/
+│       ├── system-context.md
+│       ├── domains.md
+│       ├── components.md
+│       ├── runtime.md
+│       ├── data.md
+│       ├── interfaces.md
+│       ├── testing.md
+│       ├── operations.md
+│       ├── decisions.md
+│       └── vocabulary.md
 └── cache/
 ```
 
 As with other `.hermoso` state, generated model artifacts remain clone-local by
 default. Projects may deliberately promote selected views into tracked
 documentation.
+
+### Verification-contract and scenario facet
+
+Feature designs reference one immutable snapshot and use its interface,
+testing, vocabulary, and invariant nodes. Planned interaction surfaces remain a
+design overlay until candidate verification resolves them to observed nodes.
+
+Approved Gherkin stays sealed during construction. After a passing verification
+report, Hermoso commits only its hash-locked publication paths, rebuilds the
+snapshot at that publication commit, and adds `scenario` nodes with `verifies`,
+`uses_concept`, `exercises`, and `governed_by` edges. Verified scenario
+knowledge becomes `stable`; `canonical` remains an explicit project-policy
+decision.
 
 ### Manifest
 
@@ -423,4 +439,3 @@ documentation promotion should follow only if the deterministic slice proves use
   promoted into tracked `docs/`.
 - Which benchmark repositories and tasks measure navigation improvements.
 - What context budget and ranking policy should be the default for Hermes workers.
-

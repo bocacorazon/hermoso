@@ -29,11 +29,13 @@ hermoso status <repository> --json
 hermoso context <project-id> <feature-id> <run-id> <repository> --json
 ```
 
-Echo and compare project, feature, run, canonical repository, and absolute
-workspace at entry and every graph/card boundary. Never infer them from cwd,
-conversation, branch names, or card placement. Block immediately on mismatch.
-Proceed only when status proves that the current design revision and hash are
-approved. Stop and block rather than dispatching from conversational memory.
+Never infer identity from cwd, conversation, branch names, or card placement.
+Pass explicit context (project-id, feature-id, run-id, repository) to every
+`hermoso` command — the binary validates context against persisted state and
+rejects mismatches. Proceed only when status proves that the complete
+design-package revision/hash is approved. The package includes a visible design
+and hidden verification contract/assets. Stop and block rather than dispatching
+from conversational memory.
 
 ## Author the Work Graph
 
@@ -56,6 +58,8 @@ Rules:
 - independent items have no parent links;
 - every item has a real configured profile and ordered skills;
 - acceptance criteria derive from the approved design;
+- every item cites visible `requirement_ids`, `acceptance_criterion_ids`, and
+  `surface_ids`; the graph covers the complete visible design;
 - expected changed surfaces help detect overlap but are not ownership locks;
 - validation commands are concrete and safe to run in the worktree;
 - runtime budgets are proportional;
@@ -90,6 +94,12 @@ the tenant is derived from `project_id`, and idempotency covers the full
 context. Workers refresh `hermoso context` and compare every field before work,
 validation, handoff, block, or completion.
 
+Cards may contain visible requirement/criterion text, planned or existing
+surface descriptions, constraints, and the exact model reference. They must
+not contain verification-contract paths or hashes, judgment/scenario IDs or
+text, hidden fixture/probe paths, or verifier commands. Treat any such field as
+a disclosure defect and block before dispatch.
+
 Process cards in topological readiness order:
 
 1. persist and compile through Hermoso;
@@ -109,8 +119,9 @@ block and report the orphan task ID; do not create a duplicate.
 Each worker must:
 
 1. call `kanban_show` and verify the card is active;
-2. echo the card context and absolute workspace, refresh `hermoso context`,
-   compare all fields, and block on mismatch;
+2. pass explicit context (project-id, feature-id, run-id, repository) from
+   the card to every `hermoso` command; the binary validates against
+   persisted state;
 3. work only in the exact absolute `$HERMES_KANBAN_WORKSPACE`;
 4. inspect parent handoffs before changing code;
 5. follow TDD for behavior changes;
@@ -119,7 +130,7 @@ Each worker must:
 8. commit work when the workspace is a managed worktree;
 9. leave a structured handoff with changed files, commit, tests, decisions, and
    remaining risks;
-10. refresh and compare context again, then block or complete truthfully.
+10. pass explicit context to every command, then block or complete truthfully.
 
 Do not edit `.hermoso` files from a worker worktree. Do not use
 `delegate_task` instead of Kanban for durable graph work.
@@ -163,6 +174,10 @@ For code needing human review, follow `kanban-worker` and use a
 `review-required:` block. Construction is complete only when every required
 work item is done, integration checks pass, no unresolved blockers remain, and
 the validated construction `phase-result` is persisted by `hermoso result put`.
+The resulting `awaiting_verification` state is handled by
+`hermoso-verification`. A first failed attempt may create one remediation round;
+dispatch it through the same ready/bind/start/complete lifecycle. Do not create
+or accept a third construction round.
 
 ## Common Pitfalls
 
