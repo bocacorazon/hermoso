@@ -158,6 +158,13 @@ func (r VerificationReport) Validate() error {
 	}
 	seen := map[string]struct{}{}
 	hasFailure, hasBlocked, hasPending := false, false, false
+	hasPendingSurface := false
+	for _, res := range r.SurfaceResolutions {
+		if res.Status == "pending" {
+			hasPendingSurface = true
+			break
+		}
+	}
 	for i, outcome := range r.Outcomes {
 		path := fmt.Sprintf("outcomes[%d]", i)
 		validateID(path+".judgment_id", outcome.JudgmentID, &errs)
@@ -199,8 +206,8 @@ func (r VerificationReport) Validate() error {
 	if r.Verdict == VerificationBlocked && !hasBlocked && len(r.Findings) == 0 {
 		errs.add("verdict", "blocked requires a blocked judgment or finding")
 	}
-	if r.Verdict == VerificationPending && !hasPending {
-		errs.add("verdict", "pending requires at least one pending judgment")
+	if r.Verdict == VerificationPending && !hasPending && !hasPendingSurface {
+		errs.add("verdict", "pending requires at least one pending judgment or surface resolution")
 	}
 	validateCoverageOutcomes("requirements", r.Requirements, &errs)
 	validateCoverageOutcomes("acceptance_criteria", r.AcceptanceCriteria, &errs)

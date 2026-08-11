@@ -188,6 +188,15 @@ func TestVerificationPassPublishesGherkinAndRefreshesModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Resolve pending surfaces before checking verdict.
+	if report.Verdict == domain.VerificationPending {
+		run, report, err = service.PutSurfaceResolutions(context.Background(), execution, []domain.SurfaceResolution{
+			{SurfaceID: "surface-feature", Status: "resolved", Summary: "resolved by test"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	if report.Verdict != domain.VerificationPass || run.Status != domain.StatusAwaitingRelease {
 		t.Fatalf("verification report=%#v run=%#v", report, run)
 	}
@@ -226,6 +235,15 @@ func TestResumeCompletesPartiallyRecordedGherkinPublication(t *testing.T) {
 	run, report, err := service.RunVerification(context.Background(), execution)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Resolve pending surfaces before proceeding.
+	if report.Verdict == domain.VerificationPending {
+		run, report, err = service.PutSurfaceResolutions(context.Background(), execution, []domain.SurfaceResolution{
+			{SurfaceID: "surface-feature", Status: "resolved", Summary: "resolved by test"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	publicationCommit := run.Publication.PublicationCommit
 	run.Publication = nil
@@ -269,6 +287,18 @@ func TestVerificationFailureTransitionsToAwaitingRemediation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Planned surfaces are now pending — verdict is pending until skill resolves them.
+	if report.Verdict != domain.VerificationPending ||
+		run.Status != domain.StatusAwaitingJudgment {
+		t.Fatalf("expected pending→awaiting_judgment, got verdict=%s status=%s", report.Verdict, run.Status)
+	}
+	// Resolve surfaces to get final verdict.
+	run, report, err = service.PutSurfaceResolutions(context.Background(), execution, []domain.SurfaceResolution{
+		{SurfaceID: "surface-feature", Status: "resolved", Summary: "resolved by test"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if report.Verdict != domain.VerificationFail || run.Phase != domain.PhaseConstruction ||
 		run.Status != domain.StatusAwaitingRemediation || len(run.ConstructionRounds) != 1 {
 		t.Fatalf("first failure report=%#v run=%#v", report, run)
@@ -287,6 +317,15 @@ func TestVerificationFailureCreatesOneRemediationRound(t *testing.T) {
 	run, report, err := service.RunVerification(context.Background(), execution)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Planned surfaces are now pending — resolve them first.
+	if report.Verdict == domain.VerificationPending {
+		run, report, err = service.PutSurfaceResolutions(context.Background(), execution, []domain.SurfaceResolution{
+			{SurfaceID: "surface-feature", Status: "resolved", Summary: "resolved by test"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	if report.Verdict != domain.VerificationFail ||
 		run.Status != domain.StatusAwaitingRemediation {
@@ -351,6 +390,15 @@ func TestVerificationFailureCreatesOneRemediationRound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Resolve pending surfaces from second verification.
+	if report.Verdict == domain.VerificationPending {
+		run, report, err = service.PutSurfaceResolutions(context.Background(), execution, []domain.SurfaceResolution{
+			{SurfaceID: "surface-feature", Status: "resolved", Summary: "resolved by test"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	if report.Attempt != 2 || report.Verdict != domain.VerificationPass ||
 		len(run.ConstructionRounds) != 2 || len(run.VerificationAttempts) != 2 ||
 		run.Status != domain.StatusAwaitingRelease {
@@ -363,6 +411,11 @@ func TestSecondVerificationFailureBlocksWithoutThirdRound(t *testing.T) {
 	_, service, execution, profile := setupVerificationRun(t, "verification-second-fail", true)
 	completeVerificationCandidate(t, service, execution, profile)
 	run, _, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Resolve pending surfaces first.
+	run, err = resolvePendingSurfaces(t, service, execution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,6 +455,15 @@ func TestSecondVerificationFailureBlocksWithoutThirdRound(t *testing.T) {
 	run, report, err := service.RunVerification(context.Background(), execution)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Resolve pending surfaces from second verification.
+	if report.Verdict == domain.VerificationPending {
+		run, report, err = service.PutSurfaceResolutions(context.Background(), execution, []domain.SurfaceResolution{
+			{SurfaceID: "surface-feature", Status: "resolved", Summary: "resolved by test"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	if report.Attempt != 2 || report.Verdict != domain.VerificationFail ||
 		run.Status != domain.StatusBlocked || len(run.ConstructionRounds) != 2 {
@@ -1006,12 +1068,49 @@ func completeVerificationCandidate(
 	return run
 }
 
+func resolvePendingSurfaces(
+	t *testing.T,
+	service Service,
+	execution domain.ContextRef,
+) (domain.Run, error) {
+	t.Helper()
+	run, err := service.Store.Run(context.Background(), execution)
+	if err != nil {
+		return run, err
+	}
+	if run.Status != domain.StatusAwaitingJudgment {
+		return run, nil
+	}
+	attempt := run.VerificationAttempts[len(run.VerificationAttempts)-1]
+	var resolutions []domain.SurfaceResolution
+	for _, res := range attempt.Report.SurfaceResolutions {
+		if res.Status == "pending" {
+			resolutions = append(resolutions, domain.SurfaceResolution{
+				SurfaceID:   res.SurfaceID,
+				ModelNodeID: "",
+				Status:      "resolved",
+				Summary:     "resolved by test helper",
+			})
+		}
+	}
+	if len(resolutions) == 0 {
+		return run, nil
+	}
+	run, _, err = service.PutSurfaceResolutions(context.Background(), execution, resolutions)
+	return run, err
+}
+
 func putRemediationSpec(
 	t *testing.T,
 	service Service,
 	execution domain.ContextRef,
 ) (domain.Run, error) {
 	t.Helper()
+	// First resolve any pending surfaces.
+	run, err := resolvePendingSurfaces(t, service, execution)
+	if err != nil {
+		return run, err
+	}
 	spec := domain.SkillRemediation{
 		Needs: []domain.RemediationNeed{{
 			RequirementIDs:         []string{"req-feature"},
@@ -1039,7 +1138,7 @@ func putRemediationSpec(
 			}},
 		},
 	}
-	run, _, err := service.PutRemediation(context.Background(), execution, encode(t, spec))
+	run, _, err = service.PutRemediation(context.Background(), execution, encode(t, spec))
 	return run, err
 }
 

@@ -53,6 +53,10 @@ func TestPutRemediationRejectsEmptyNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	run, err = resolvePendingSurfaces(t, service, execution)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if run.Status != domain.StatusAwaitingRemediation {
 		t.Fatalf("expected awaiting_remediation, got %s", run.Status)
 	}
@@ -89,6 +93,10 @@ func TestPutRemediationRejectsContextMismatch(t *testing.T) {
 	completeVerificationCandidate(t, service, execution, profile)
 
 	run, _, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = resolvePendingSurfaces(t, service, execution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +149,10 @@ func TestRemediationRoundDeterministicFields(t *testing.T) {
 	completeVerificationCandidate(t, service, execution, profile)
 
 	run, _, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = resolvePendingSurfaces(t, service, execution)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -130,7 +130,7 @@ func (s Service) RunVerification(
 	}
 	missingSurfaces := map[string]struct{}{}
 	for _, resolution := range resolutions {
-		if resolution.Status != "resolved" {
+		if resolution.Status == "missing" {
 			missingSurfaces[resolution.SurfaceID] = struct{}{}
 			findings = append(findings, resolution.Summary)
 		}
@@ -144,6 +144,14 @@ func (s Service) RunVerification(
 		}
 	}
 	verdict := aggregateVerdict(outcomes)
+	// Pending surface resolutions cause the verdict to be pending — the skill
+	// must resolve them before the verdict can be final.
+	for _, resolution := range resolutions {
+		if resolution.Status == "pending" && verdict != domain.VerificationBlocked {
+			verdict = domain.VerificationPending
+			break
+		}
+	}
 	if fingerprintErr != nil || commitErr != nil || before != after || commitAfter != candidateCommit {
 		verdict = domain.VerificationBlocked
 	}
@@ -455,17 +463,20 @@ func resolveCandidateSurfaces(
 				resolution.Summary = fmt.Sprintf("existing surface %q is missing or contradictory", surface.ID)
 			}
 		} else {
+			// Planned surfaces require skill-authored resolution — Go does not
+			// attempt semantic matching. Check for cooperative surface_id tagging
+			// (deterministic), otherwise mark as pending for the skill to resolve.
 			for _, node := range snapshot.Nodes {
 				if node.Kind == "interface" && node.Attributes["interface_kind"] == surface.Kind &&
-					(node.Attributes["surface_id"] == surface.ID || strings.EqualFold(node.Title, surface.Title)) {
+					node.Attributes["surface_id"] == surface.ID {
 					resolution.ModelNodeID, resolution.Status = node.ID, "resolved"
-					resolution.Summary = "planned interaction surface resolved"
+					resolution.Summary = "planned interaction surface resolved via cooperative tagging"
 					break
 				}
 			}
 			if resolution.Status == "" {
-				resolution.Status = "missing"
-				resolution.Summary = fmt.Sprintf("planned surface %q was not observed in the candidate model", surface.ID)
+				resolution.Status = "pending"
+				resolution.Summary = fmt.Sprintf("planned surface %q requires skill resolution", surface.ID)
 			}
 		}
 		resolutions = append(resolutions, resolution)
@@ -574,6 +585,156 @@ func validateReportCompleteness(
 		return errors.New("verification report omitted requirement or acceptance-criterion coverage")
 	}
 	return nil
+}
+
+func (s Service) PutSurfaceResolutions(
+	ctx context.Context,
+	execution domain.ContextRef,
+	resolutions []domain.SurfaceResolution,
+) (domain.Run, domain.VerificationReport, error) {
+	run, err := s.Store.Run(ctx, execution)
+	if err != nil {
+		return domain.Run{}, domain.VerificationReport{}, err
+	}
+	if run.Phase != domain.PhaseVerification || run.Status != domain.StatusAwaitingJudgment {
+		return domain.Run{}, domain.VerificationReport{}, errors.New("surface resolution requires a run in awaiting_judgment state")
+	}
+	attempt := &run.VerificationAttempts[len(run.VerificationAttempts)-1]
+	report := attempt.Report
+
+	// Build a set of submitted surface IDs
+	submitted := map[string]domain.SurfaceResolution{}
+	for _, res := range resolutions {
+		submitted[res.SurfaceID] = res
+	}
+
+	// Apply submitted resolutions to pending entries
+	pendingCount := 0
+	for i, res := range report.SurfaceResolutions {
+		if res.Status == "pending" {
+			pendingCount++
+			if update, ok := submitted[res.SurfaceID]; ok {
+				report.SurfaceResolutions[i] = update
+				pendingCount--
+			}
+		}
+	}
+	if pendingCount > 0 {
+		return domain.Run{}, domain.VerificationReport{}, errors.New("not all pending surface resolutions were provided")
+	}
+
+	// Apply the invariant: unresolved surfaces fail linked judgments
+	missingSurfaces := map[string]struct{}{}
+	for _, res := range report.SurfaceResolutions {
+		if res.Status != "resolved" {
+			missingSurfaces[res.SurfaceID] = struct{}{}
+		}
+	}
+	for i := range report.Outcomes {
+		for _, surfaceID := range report.Outcomes[i].SurfaceIDs {
+			if _, missing := missingSurfaces[surfaceID]; missing && report.Outcomes[i].Status == domain.JudgmentPass {
+				report.Outcomes[i].Status = domain.JudgmentFail
+				report.Outcomes[i].Summary = "candidate interaction surface did not resolve"
+			}
+		}
+	}
+
+	// Re-aggregate verdict
+	verdict := aggregateVerdict(report.Outcomes)
+	for _, res := range report.SurfaceResolutions {
+		if res.Status == "pending" && verdict != domain.VerificationBlocked {
+			verdict = domain.VerificationPending
+			break
+		}
+	}
+	report.Verdict = verdict
+
+	if err := report.Validate(); err != nil {
+		return domain.Run{}, domain.VerificationReport{}, fmt.Errorf("judgeVerification: report validation failed: %w", err)
+	}
+
+	reportHash, err := Hash(report)
+	if err != nil {
+		return domain.Run{}, domain.VerificationReport{}, err
+	}
+	attempt.Report = report
+	attempt.ReportHash = reportHash
+
+	// Sync candidate model source revision for non-pending, non-blocked verdicts
+	if report.Verdict != domain.VerificationPending && report.Verdict != domain.VerificationBlocked {
+		report.CandidateModel.SourceRevision = report.CandidateCommit
+		attempt.Report = report
+		attempt.CandidateModel = report.CandidateModel
+	}
+
+	updatedRun, err := s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+		r.VerificationAttempts[len(r.VerificationAttempts)-1] = *attempt
+		switch report.Verdict {
+		case domain.VerificationPass:
+			r.Phase = domain.PhaseVerification
+			r.Status = domain.StatusInProgress
+		case domain.VerificationFail:
+			if attempt.Number == 1 {
+				r.Phase = domain.PhaseConstruction
+				r.Status = domain.StatusAwaitingRemediation
+			} else {
+				r.Phase = domain.PhaseVerification
+				r.Status = domain.StatusBlocked
+			}
+		case domain.VerificationPending:
+			r.Phase = domain.PhaseVerification
+			r.Status = domain.StatusAwaitingJudgment
+		default:
+			r.Phase = domain.PhaseVerification
+			r.Status = domain.StatusBlocked
+		}
+		r.Revision++
+		r.UpdatedAt = s.Now().UTC()
+		return nil
+	})
+	if err != nil {
+		return domain.Run{}, domain.VerificationReport{}, err
+	}
+	// On pass, run the publication flow — same as RunVerification and JudgeVerification.
+	if report.Verdict == domain.VerificationPass {
+		hasGherkin := false
+		for _, artifact := range updatedRun.Design.Verification.Artifacts {
+			if artifact.Kind == "gherkin" {
+				hasGherkin = true
+				break
+			}
+		}
+		if hasGherkin {
+			updatedRun, err = s.publishPassingGherkin(ctx, execution, updatedRun, *attempt)
+			if err != nil {
+				blocked, blockErr := s.Store.UpdateRun(ctx, execution, func(current *domain.Run) error {
+					current.Phase = domain.PhaseVerification
+					current.Status = domain.StatusBlocked
+					current.VerificationBlocker = "Gherkin publication failed: " + err.Error()
+					current.Revision++
+					current.UpdatedAt = s.Now().UTC()
+					return nil
+				})
+				if blockErr != nil {
+					return domain.Run{}, report, errors.Join(err, blockErr)
+				}
+				return blocked, report, err
+			}
+		} else {
+			updatedRun, err = s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+				r.Phase = domain.PhaseVerification
+				r.Status = domain.StatusAwaitingRelease
+				r.VerificationBlocker = ""
+				r.Revision++
+				r.UpdatedAt = s.Now().UTC()
+				return nil
+			})
+			if err != nil {
+				return domain.Run{}, report, err
+			}
+		}
+	}
+	return updatedRun, report, err
 }
 
 func (s Service) PutRemediation(
@@ -800,6 +961,9 @@ func (s Service) JudgeVerification(
 				r.Phase = domain.PhaseVerification
 				r.Status = domain.StatusBlocked
 			}
+		case domain.VerificationPending:
+			r.Phase = domain.PhaseVerification
+			r.Status = domain.StatusAwaitingJudgment
 		default:
 			r.Phase = domain.PhaseVerification
 			r.Status = domain.StatusBlocked

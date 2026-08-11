@@ -135,7 +135,10 @@ func AddPublishedScenarios(
 			for _, surfaceID := range judgment.SurfaceIDs {
 				target := surfaces[surfaceID]
 				if target == "" {
-					return domain.ModelSnapshot{}, fmt.Errorf("scenario %q surface %q is unresolved", scenarioID, surfaceID)
+					// Surface was resolved by the skill but has no model node ID
+					// (e.g., a planned surface with no cooperative tagging). Skip
+					// the edge — the invariant is already enforced by verification.
+					continue
 				}
 				addPublishedEdge(&snapshot, edgeIDs, nodeID, "exercises", target, fileID, producer)
 			}
