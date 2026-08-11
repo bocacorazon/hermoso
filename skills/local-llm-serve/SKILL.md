@@ -34,11 +34,12 @@ to use it as the active provider.
 
 ## Available instances
 
-| Instance  | Model              | Port  | VRAM est. |
-|-----------|--------------------|-------|-----------|
-| qwen64k   | Qwen3.6 64K        | 8080  | ~22 GB    |
-| qwen27b   | Qwen3.6 27B Q4_K_M | 8081  | ~17 GB    |
-| gemma31b  | Gemma 4 31B Q4_K_M | 8082  | ~19 GB    |
+| Instance    | Model                       | Port  | VRAM est. |
+|-------------|-----------------------------|-------|-----------|
+| qwen64k     | Qwen3.6 64K                 | 8080  | ~22 GB    |
+| qwen27b     | Qwen3.6 27B Q4_K_M          | 8081  | ~17 GB    |
+| gemma31b    | Gemma 4 31B Q4_K_M          | 8082  | ~19 GB    |
+| qwen3coder  | Qwen3-Coder-30B-A3B UD-Q4_K_XL | 8083 | ~18 GB |
 
 ## Workflow: Start a model
 
