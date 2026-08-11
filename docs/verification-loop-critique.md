@@ -3,7 +3,7 @@
 Date: 2026-08-09
 Branch: `bdd-contracts-and-verification`
 Status: Design evaluation
-Updated: 2026-08-10 — Issues A and B resolved
+Updated: 2026-08-10 — All issues (A, B, C, D, E) resolved
 
 ## Principle
 
@@ -195,7 +195,22 @@ failed report. The Go binary exposes
 report + evidence and accepts a skill-authored remediation spec for
 validation and persistence, mirroring the `design put` / `graph put` pattern.
 
-### Issue C (moderate): Planned surface resolution is a fuzzy title match in Go
+### Issue C (moderate): Planned surface resolution is a fuzzy title match in Go — RESOLVED
+
+**Status**: Resolved on 2026-08-10. The two-phase surface resolution is implemented:
+- Phase 1 (`verification run`): Go keeps deterministic checks (existing surface
+  model node match, cooperative `surface_id` tagging). The fuzzy
+  `strings.EqualFold(node.Title, surface.Title)` match is removed. Unmatched
+  planned surfaces are marked `"pending"` instead of `"missing"`. Pending
+  surfaces cause the verdict to be `VerificationPending` → `AwaitingJudgment`.
+- Phase 2 (`verification resolve`): The `hermoso-verification` skill queries the
+  candidate model snapshot, determines whether each planned surface was
+  implemented, and submits `SurfaceResolution` entries. Go validates that all
+  pending surfaces are resolved, applies the invariant (unresolved surfaces
+  fail linked judgments), re-aggregates the verdict, and transitions the run.
+- Both `verification resolve` and `verification judge` can be called in any
+  order. The run stays in `AwaitingJudgment` until the verdict is no longer
+  pending.
 
 **Location**: `internal/workflow/verification.go`, `resolveCandidateSurfaces`,
 lines 437-474.
@@ -228,7 +243,14 @@ invariant) and overrides linked judgment outcomes to fail if not. The fuzzy
 title match becomes a fallback only when no skill resolution is provided, or
 is removed entirely.
 
-### Issue D (moderate): Identity verification is a skill ritual instead of a binary invariant
+### Issue D (moderate): Identity verification is a skill ritual instead of a binary invariant — RESOLVED
+
+**Status**: Resolved on 2026-08-10. The Go binary already enforced identity on
+every command via `Store.Run()` and `Store.UpdateRun()` (both call
+`validateRunIdentity()` and check `run.Context.Equal(expected)`). The redundant
+echo/compare/block ritual has been removed from all 5 skills and the skills
+test. Skills now instruct: "Pass explicit context to every command — the binary
+validates context against persisted state and rejects mismatches."
 
 **Location**: All four skills (`hermoso`, `hermoso-design`,
 `hermoso-construction`, `hermoso-verification`).
@@ -259,7 +281,12 @@ echo incorrectly and block when the binary would have succeeded. Either way,
 the skill is doing enforcement that the binary either already does or should
 do.
 
-### Issue E (minor): Gherkin placeholder scan is a content-quality check in the contract validator
+### Issue E (minor): Gherkin placeholder scan is a content-quality check in the contract validator — RESOLVED
+
+**Status**: Resolved on 2026-08-10. The placeholder scan (TODO/TBD/NEEDS
+CLARIFICATION/[PLACEHOLDER]) has been removed from `parseGherkin` in
+`internal/verification/contract.go`. A content-quality checklist item has been
+added to the `hermoso-verification-author` skill.
 
 **Location**: `internal/verification/contract.go`, `parseGherkin`, lines
 254-258.
@@ -292,13 +319,13 @@ It gets the judgment boundary wrong in three places, all in
 |---|---|---|---|
 | `judgeExecution` (rubric) | ~~Reduces qualitative oracle to exit code~~ Collects evidence, returns `JudgmentPending` | ✅ Done — Go collects evidence, skill applies rubric in Phase 2 | `hermoso-verification` skill |
 | `remediationRound` | ~~Templates remediation needs + work items~~ Transitions to AwaitingRemediation, accepts skill-authored spec | ✅ Done — Go transitions, skill authors spec via `verification remediate` | `hermoso-verification` skill |
-| `resolveCandidateSurfaces` (planned) | Fuzzy title match | Enforce "all surfaces resolved" invariant, let skill resolve | `hermoso-verification` skill |
+| `resolveCandidateSurfaces` (planned) | ~~Fuzzy title match~~ Marks planned surfaces as pending | ✅ Done — Go marks pending, skill resolves via `verification resolve` | `hermoso-verification` skill |
 
 And it has the inverse problem in one place:
 
 | Function | What the skills do | What Go should do |
 |---|---|---|
-| Identity verification (all skills) | Manually echo/compare context at every boundary | Reject mismatched context on every command; remove the ritual |
+| Identity verification (all skills) | ~~Manually echo/compare context at every boundary~~ Pass explicit context to every command | ✅ Done — Binary rejects mismatched context; ritual removed from skills |
 
 ### The throughline
 
@@ -306,6 +333,7 @@ The `hermoso-verification` skill is currently too thin — it calls
 `hermoso verification run` and routes the result. It should be the agent that
 applies rubric judgments (✅ done via `verification judge`), authors remediation
 specs for failed attempts (✅ done via `verification remediate`), and resolves
-planned surfaces against the model. The Go binary should collect evidence,
-enforce invariants, validate structure, and persist — but stop short of making
-qualitative judgments that a reasoning model would make better.
+planned surfaces against the model (✅ done via `verification resolve`). The Go
+binary collects evidence, enforces invariants, validates structure, and
+persists — but stops short of making qualitative judgments that a reasoning
+model would make better. All five critique issues (A, B, C, D, E) are resolved.
