@@ -45,7 +45,7 @@ Usage:
   hermoso context <project-id> <feature-id> <run-id> <repository>
   hermoso model <build|status|query|explain> ...
   hermoso design put <project-id> <feature-id> <run-id> <repository> <path>
-  hermoso verification <put|run|judge|remediate> ...
+  hermoso verification <put|run|judge|remediate|resolve> ...
   hermoso approve design <project-id> <feature-id> <run-id> <repository> <revision> <package-hash> <actor> [comment]
   hermoso graph put <project-id> <feature-id> <run-id> <repository> <path>
   hermoso construction <prepare|ready|integrate> ...
@@ -453,8 +453,8 @@ func (a application) runDesign(ctx context.Context, args []string) int {
 }
 
 func (a application) runVerificationContract(ctx context.Context, args []string) int {
-	if len(args) == 0 || (args[0] != "put" && args[0] != "run" && args[0] != "judge" && args[0] != "remediate") {
-		return a.out.usageError("verification requires: put <full-context> <path> or run <full-context> or judge <full-context> <judgments-path> or remediate <full-context> <spec-path>")
+	if len(args) == 0 || (args[0] != "put" && args[0] != "run" && args[0] != "judge" && args[0] != "remediate" && args[0] != "resolve") {
+		return a.out.usageError("verification requires: put <full-context> <path> or run <full-context> or judge <full-context> <judgments-path> or remediate <full-context> <spec-path> or resolve <full-context> <resolutions-path>")
 	}
 	action := args[0]
 	store, execution, rest, err := a.resolve(ctx, args[1:])
@@ -499,6 +499,28 @@ func (a application) runVerificationContract(ctx context.Context, args []string)
 			"verification judge",
 			map[string]any{"run": run, "report": report},
 			fmt.Sprintf("verification judged: verdict=%s\n", report.Verdict),
+		)
+	}
+	if action == "resolve" {
+		if len(rest) != 1 {
+			return a.out.usageError("verification resolve requires exactly one resolutions JSON path after full context")
+		}
+		data, err := a.deps.FS.ReadFile(rest[0])
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+		}
+		var resolutions []domain.SurfaceResolution
+		if err := json.Unmarshal(data, &resolutions); err != nil {
+			return a.out.failure(ExitFailure, ErrorValidation, fmt.Sprintf("decode resolutions: %v", err))
+		}
+		run, report, err := service.PutSurfaceResolutions(ctx, execution, resolutions)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorState, err.Error())
+		}
+		return a.out.success(
+			"verification resolve",
+			map[string]any{"run": run, "report": report},
+			fmt.Sprintf("verification resolved: verdict=%s\n", report.Verdict),
 		)
 	}
 	if action == "remediate" {
