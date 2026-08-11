@@ -21,9 +21,11 @@ them this contract, scenario IDs/text, verifier commands, fixtures, probes,
 asset paths, or hashes. This is operational non-disclosure through context and
 worktree separation, not an OS security boundary.
 
-Never edit `.hermoso/**`. At entry and every handoff, run `hermoso context`,
-compare the complete canonical tuple and absolute workspace, and block on any
-mismatch. Never infer identity from cwd, conversation, branch names, or assets.
+Never edit `.hermoso/**`. Never infer identity from cwd, conversation, branch
+names, or assets. Pass explicit context (project-id, feature-id, run-id,
+repository) to every `hermoso` command — the binary validates context against
+persisted state and rejects mismatches. Call `hermoso context` to resolve
+the canonical tuple when needed.
 
 ## Authoring flow
 

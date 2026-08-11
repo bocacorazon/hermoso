@@ -154,13 +154,14 @@ func TestSkillsRequireExplicitContextChecks(t *testing.T) {
 	root := repositoryRoot(t)
 	for _, name := range skillNames {
 		content := strings.ToLower(read(t, filepath.Join(root, "skills", name, "SKILL.md")))
-		for _, required := range []string{"hermoso context", "absolute workspace", "block", "mismatch"} {
-			if !strings.Contains(content, required) {
-				t.Errorf("%s must require %q at boundaries", name, required)
-			}
-		}
 		if !strings.Contains(content, "never infer") {
 			t.Errorf("%s must prohibit inferred identity", name)
+		}
+		if !strings.Contains(content, "hermoso context") {
+			t.Errorf("%s must reference hermoso context command", name)
+		}
+		if !strings.Contains(content, "explicit") {
+			t.Errorf("%s must require explicit context on every command", name)
 		}
 	}
 }

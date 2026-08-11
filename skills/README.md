@@ -51,8 +51,9 @@ visibility, Kanban CLI/toolset, and gateway readiness. `--static` performs only
 repository checks and is suitable for CI.
 
 Every skill invocation must receive an explicit run ID, canonical repository,
-and absolute workspace. Refresh `hermoso context <project-id> <feature-id> <run-id> <repository> --json`
-at phase/card boundaries; never infer identity from cwd or conversation.
+and absolute workspace. Pass explicit context to every `hermoso` command; the
+binary validates context against persisted state and rejects mismatches. Never
+infer identity from cwd or conversation.
 
 Hermes caches loaded skills for a session. Start a new Hermes session after
 changing `skills.external_dirs`, replacing a skill directory, changing the

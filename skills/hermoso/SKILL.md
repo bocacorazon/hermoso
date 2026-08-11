@@ -88,8 +88,7 @@ hermoso resume <project-id> <feature-id> <run-id> /absolute/target/repository --
    available `hermoso init <repo> --json`.
 3. If no matching run exists, run the available
    `hermoso start <feature-id> <repo> --json`.
-4. Resolve `hermoso context`, echo all four identities, and compare them with
-   status. Block on any mismatch.
+4. Resolve `hermoso context <project-id> <feature-id> <run-id> <repository> --json` for canonical identity. Pass these explicit values to every subsequent command — the binary validates the context against persisted state and rejects mismatches.
 5. Invoke `hermoso-design` with the complete context, absolute workspace,
    objective, and
    `profiles/default.yaml` bindings.
@@ -109,9 +108,8 @@ hermoso resume <project-id> <feature-id> <run-id> /absolute/target/repository --
    failure/block. A pass publishes approved Gherkin and reaches
    `awaiting_release`.
 12. Refresh `hermoso status --json` after every persisted transition and before
-   declaring completion. At every phase boundary, refresh `hermoso context`,
-   echo the full tuple and absolute workspace, compare them, and block on any
-   mismatch.
+   declaring completion. Pass explicit context to every command — the binary
+   rejects mismatches against persisted state.
 
 ## Explicit Approval Gate
 

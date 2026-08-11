@@ -29,9 +29,10 @@ Never edit `.hermoso/**`; persist only through the CLI.
 - objective and constraints from the developer;
 - selected profile bindings, normally `profiles/default.yaml`.
 
-Never infer identity from cwd or conversation. At entry, before validation, and
-before handoff, refresh context, echo project/feature/run/repository, compare
-all fields and the absolute workspace, and block on any mismatch.
+Never infer identity from cwd or conversation. Pass explicit context
+(project-id, feature-id, run-id, repository) to every `hermoso` command.
+Call `hermoso context` to resolve the canonical tuple when needed. The binary
+validates context against persisted state and rejects mismatches.
 
 ## Live Contract First
 
@@ -187,7 +188,7 @@ If a decision, access requirement, or experiment prevents a valid design:
 
 ## Verification Checklist
 
-- [ ] Full context came from `hermoso context`, was echoed, and matched status.
+- [ ] Full context from `hermoso context` passed explicitly to every command.
 - [ ] Absolute workspace matched the canonical repository.
 - [ ] The knowledge spine was fresh and bounded model queries informed the design.
 - [ ] Feature design passed live validation with stable traceability IDs.

@@ -15,9 +15,11 @@ metadata:
 
 ## Entry and execution
 
-Refresh `status` and `hermoso context`, echo the complete tuple and
-`absolute workspace`, and block on any mismatch. Never infer identity from cwd,
-conversation, branches, or Kanban. Proceed only from
+Never infer identity from cwd, conversation, branches, or Kanban. Pass
+explicit context (project-id, feature-id, run-id, repository) to every
+`hermoso` command — the binary validates context against persisted state and
+rejects mismatches. Call `hermoso context` to resolve the canonical tuple
+when needed. Proceed only from
 `construction/awaiting_verification` with the approved package unchanged.
 Never edit `.hermoso/**` or materialize hidden assets in a build worktree.
 
