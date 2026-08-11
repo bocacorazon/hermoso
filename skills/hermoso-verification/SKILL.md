@@ -54,11 +54,48 @@ The verdict from Phase 1 depends on the oracle type:
 Do not translate an infrastructure failure into a passing result. A completed
 pass/fail accounts for every required judgment.
 
-### Phase 2 — Qualitative judgment (rubric oracles only)
+### Phase 2 — Surface resolution and qualitative judgment
 
-When Phase 1 returns `awaiting_judgment`, the skill must apply rubric criteria
-to the collected evidence. This is the value-added judgment work that belongs
-in the skill, not in Go.
+When Phase 1 returns `awaiting_judgment`, the run has pending items that require
+skill judgment. There are two types of pending items:
+
+1. **Pending surface resolutions** — planned surfaces that Go could not
+   deterministically match to model nodes (no cooperative `surface_id`
+   tagging). The skill must determine whether each planned surface was
+   implemented by the candidate.
+
+2. **Pending rubric judgments** — rubric oracle outcomes that require
+   qualitative assessment against rubric criteria.
+
+Both can be present in the same run. Resolve them in any order — the run stays
+in `awaiting_judgment` until the verdict is no longer pending.
+
+#### Surface resolution
+
+1. Read the Phase 1 report. Pending surface resolutions have `status: "pending"`.
+
+2. For each pending surface, query the candidate model snapshot to find the
+   corresponding node:
+   ```sh
+   hermoso model query <project-id> <repository> evidence <surface-or-invariant-id> --json
+   ```
+
+3. Determine whether the candidate implemented the planned surface. Write a
+   `SurfaceResolution` entry for each pending surface:
+   - `surface_id` — matches the pending resolution
+   - `model_node_id` — the matching model node ID, or empty if unresolved
+   - `status` — `"resolved"` if the surface was implemented, `"missing"` if not
+   - `summary` — reasoned explanation of the match or non-match
+
+4. Submit the resolutions:
+   ```sh
+   hermoso verification resolve <project-id> <feature-id> <run-id> <repository> <resolutions.json> --json
+   ```
+
+Go validates that all pending surfaces are resolved, applies the invariant
+(unresolved surfaces fail linked judgments), and re-aggregates the verdict.
+
+#### Qualitative judgment (rubric oracles only)
 
 Steps:
 
