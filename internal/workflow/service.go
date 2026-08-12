@@ -303,6 +303,13 @@ func canonicalProfilePath(path string) (string, error) {
 }
 
 func (s Service) Prepare(ctx context.Context, execution domain.ContextRef, profilePath string) (domain.Run, dispatch.Plan, bool, error) {
+	if profilePath == "" {
+		resolved, err := s.Store.ResolveProfile(ctx, execution)
+		if err != nil {
+			return domain.Run{}, dispatch.Plan{}, false, err
+		}
+		profilePath = resolved
+	}
 	profilePath, err := canonicalProfilePath(profilePath)
 	if err != nil {
 		return domain.Run{}, dispatch.Plan{}, false, err

@@ -59,8 +59,8 @@ Commands:
   version    Print the Hermoso version
   schema     Print a live versioned contract schema
   validate   Validate a JSON contract file
-  init       Initialize clone-local Hermoso state
-  start      Create a design-phase run
+  init       Initialize clone-local Hermoso state (optionally with --profile)
+  start      Create a design-phase run (optionally with --profile)
   status     Show project and run state
   context    Resolve and validate one canonical execution context
   model      Build and query the repository knowledge spine
@@ -333,11 +333,19 @@ func parseModelQueryOptions(args []string) ([]string, int, error) {
 }
 
 func (a application) runInit(ctx context.Context, args []string) int {
+	profilePath, args := takeProfileFlag(args)
 	if len(args) != 1 {
 		return a.out.usageError("init requires exactly one repository path")
 	}
 	path := args[0]
-	project, created, err := state.Initialize(ctx, path, a.deps.Now())
+	var project domain.Project
+	var created bool
+	var err error
+	if profilePath != "" {
+		project, created, err = state.InitializeWithProfile(ctx, path, profilePath, a.deps.Now())
+	} else {
+		project, created, err = state.Initialize(ctx, path, a.deps.Now())
+	}
 	if err != nil {
 		return a.stateFailure(err)
 	}
@@ -352,6 +360,7 @@ func (a application) runInit(ctx context.Context, args []string) int {
 }
 
 func (a application) runStart(ctx context.Context, args []string) int {
+	profilePath, args := takeProfileFlag(args)
 	if len(args) != 2 {
 		return a.out.usageError("start requires a feature ID and repository path")
 	}
@@ -360,7 +369,12 @@ func (a application) runStart(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.stateFailure(err)
 	}
-	run, err := store.StartRun(ctx, args[0], a.deps.Now())
+	var run domain.Run
+	if profilePath != "" {
+		run, err = store.StartRunWithProfile(ctx, args[0], profilePath, a.deps.Now())
+	} else {
+		run, err = store.StartRun(ctx, args[0], a.deps.Now())
+	}
 	if err != nil {
 		return a.stateFailure(err)
 	}
@@ -654,10 +668,14 @@ func (a application) runConstruction(ctx context.Context, args []string) int {
 	}
 	switch action {
 	case "prepare":
-		if len(rest) != 1 {
-			return a.out.usageError("construction prepare requires a profile path")
+		if len(rest) > 1 {
+			return a.out.usageError("construction prepare accepts at most one profile path")
 		}
-		run, plan, changed, err := service.Prepare(ctx, execution, rest[0])
+		profilePath := ""
+		if len(rest) == 1 {
+			profilePath = rest[0]
+		}
+		run, plan, changed, err := service.Prepare(ctx, execution, profilePath)
 		if err != nil {
 			return a.out.failure(ExitFailure, ErrorState, err.Error())
 		}
@@ -905,4 +923,23 @@ func takeJSONFlag(args []string) (bool, []string) {
 		filtered = append(filtered, arg)
 	}
 	return jsonOutput, filtered
+}
+
+func takeProfileFlag(args []string) (string, []string) {
+	filtered := make([]string, 0, len(args))
+	var profilePath string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--profile" {
+			if i+1 < len(args) {
+				profilePath = args[i+1]
+				i++
+				continue
+			}
+		} else if strings.HasPrefix(args[i], "--profile=") {
+			profilePath = strings.TrimPrefix(args[i], "--profile=")
+			continue
+		}
+		filtered = append(filtered, args[i])
+	}
+	return profilePath, filtered
 }

@@ -48,6 +48,7 @@ type Run struct {
 	Publication           *GherkinPublication   `json:"gherkin_publication,omitempty"`
 	TaskBindings          []TaskBinding         `json:"task_bindings,omitempty"`
 	Evidence              []Evidence            `json:"evidence,omitempty"`
+	ProfilePath           string                `json:"profile_path,omitempty"`
 }
 
 type DesignState struct {

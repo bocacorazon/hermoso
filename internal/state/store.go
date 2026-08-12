@@ -48,6 +48,10 @@ func (s Store) Project(ctx context.Context) (domain.Project, error) {
 }
 
 func Initialize(ctx context.Context, start string, now time.Time) (domain.Project, bool, error) {
+	return InitializeWithProfile(ctx, start, "", now)
+}
+
+func InitializeWithProfile(ctx context.Context, start, profilePath string, now time.Time) (domain.Project, bool, error) {
 	repository, err := DiscoverRepository(ctx, start)
 	if err != nil {
 		return domain.Project{}, false, err
@@ -73,6 +77,7 @@ func Initialize(ctx context.Context, start string, now time.Time) (domain.Projec
 				Target:        repository.Target,
 				KanbanTenant:  domain.KanbanTenant(projectID),
 				CreatedAt:     now.UTC(),
+				ProfilePath:   profilePath,
 			}
 			if err := project.Validate(); err != nil {
 				return fmt.Errorf("create project state: %w", err)
@@ -110,6 +115,10 @@ func Load(ctx context.Context, start string) (Store, Status, error) {
 }
 
 func (s Store) StartRun(ctx context.Context, featureID string, now time.Time) (domain.Run, error) {
+	return s.StartRunWithProfile(ctx, featureID, "", now)
+}
+
+func (s Store) StartRunWithProfile(ctx context.Context, featureID, profilePath string, now time.Time) (domain.Run, error) {
 	var run domain.Run
 	err := s.withLock(ctx, true, func() error {
 		project, err := s.readProjectUnlocked()
@@ -129,11 +138,12 @@ func (s Store) StartRun(ctx context.Context, featureID string, now time.Time) (d
 				RunID:         runID,
 				Repository:    project.Target,
 			},
-			Phase:     domain.PhaseDesign,
-			Status:    domain.StatusPending,
-			Revision:  1,
-			CreatedAt: now.UTC(),
-			UpdatedAt: now.UTC(),
+			Phase:       domain.PhaseDesign,
+			Status:      domain.StatusPending,
+			Revision:    1,
+			CreatedAt:   now.UTC(),
+			UpdatedAt:   now.UTC(),
+			ProfilePath: profilePath,
 		}
 		if err := run.Validate(); err != nil {
 			return err
@@ -141,6 +151,30 @@ func (s Store) StartRun(ctx context.Context, featureID string, now time.Time) (d
 		return writeJSONAtomic(s.repository.Root, s.runPath(run.Context.RunID), run)
 	})
 	return run, err
+}
+
+func (s Store) ResolveProfile(ctx context.Context, execution domain.ContextRef) (string, error) {
+	var resolved string
+	err := s.withLock(ctx, false, func() error {
+		run, err := s.readRunUnlocked(execution.RunID)
+		if err != nil {
+			return err
+		}
+		if run.ProfilePath != "" {
+			resolved = run.ProfilePath
+			return nil
+		}
+		project, err := s.readProjectUnlocked()
+		if err != nil {
+			return err
+		}
+		if project.ProfilePath != "" {
+			resolved = project.ProfilePath
+			return nil
+		}
+		return ErrProfileNotConfigured
+	})
+	return resolved, err
 }
 
 func (s Store) Context(ctx context.Context, runID string) (domain.ContextRef, error) {
@@ -276,6 +310,14 @@ func (s Store) readProjectUnlocked() (domain.Project, error) {
 		return domain.Project{}, fmt.Errorf("%w: project targets %q, repository is %q", ErrIncompatibleState, project.Target.Repository, s.repository.Root)
 	}
 	return project, nil
+}
+
+func (s Store) readRunUnlocked(runID string) (domain.Run, error) {
+	var run domain.Run
+	if err := readStateJSON(s.runPath(runID), "run", &run); err != nil {
+		return domain.Run{}, err
+	}
+	return run, nil
 }
 
 func (s Store) readRunsUnlocked(project domain.Project) ([]domain.Run, error) {

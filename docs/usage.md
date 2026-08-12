@@ -21,8 +21,8 @@ hermoso help
 hermoso version [--json]
 hermoso schema <feature-design|feature-verification-contract|work-graph|phase-result> [--json]
 hermoso validate <feature-design|feature-verification-contract|work-graph|phase-result> <path> <project-id> <feature-id> <run-id> <repository> [--json]
-hermoso init <repository> [--json]
-hermoso start <feature-id> <repository> [--json]
+hermoso init <repository> [--profile <path>] [--json]
+hermoso start <feature-id> <repository> [--profile <path>] [--json]
 hermoso status <repository> [--json]
 hermoso context <project-id> <feature-id> <run-id> <repository> [--json]
 hermoso model build <project-id> <repository> [--revision <commit>] [--scip <path>] [--json]
@@ -33,7 +33,7 @@ hermoso design put <project-id> <feature-id> <run-id> <repository> <path> [--jso
 hermoso verification put <project-id> <feature-id> <run-id> <repository> <path> [--json]
 hermoso approve design <project-id> <feature-id> <run-id> <repository> <package-revision> <package-hash> <actor> [comment] [--json]
 hermoso graph put <project-id> <feature-id> <run-id> <repository> <path> [--json]
-hermoso construction prepare <project-id> <feature-id> <run-id> <repository> <profile-path> [--json]
+hermoso construction prepare <project-id> <feature-id> <run-id> <repository> [profile-path] [--json]
 hermoso construction ready <project-id> <feature-id> <run-id> <repository> [--json]
 hermoso task bind <project-id> <feature-id> <run-id> <repository> <work-item-id> <task-id> [--json]
 hermoso work start <project-id> <feature-id> <run-id> <repository> <work-item-id> [--json]
@@ -80,13 +80,44 @@ doctor. To replace phase/profile bindings, edit `profiles/default.yaml` or set
 even when the filename ends in `.yaml`. Do not copy either asset into the target
 repository.
 
+## Profile resolution
+
+Hermoso supports per-repo and per-run profile configuration. A profile is a
+JSON file that maps phases to Hermes profile names and model settings.
+
+**Per-repo profile.** Pass `--profile <path>` at `init` time. The path is
+persisted in `.hermoso/project.json` and becomes the default for all runs in
+that repository:
+
+```sh
+hermoso init /path/to/repository --profile /path/to/profile.json --json
+```
+
+**Per-run override.** Pass `--profile <path>` at `start` time. The override is
+stored on the run record and takes precedence over the repo-level default for
+that run only:
+
+```sh
+hermoso start feature-id /path/to/repository --profile /path/to/override.json --json
+```
+
+**Resolution chain.** When `construction prepare` is called without an explicit
+profile path argument, Hermoso resolves the profile in this order:
+
+1. Run-level `profile_path` (set via `start --profile`)
+2. Project-level `profile_path` (set via `init --profile`)
+3. Error: `no profile configured for project or run`
+
+When a profile path is passed directly to `construction prepare`, it takes
+precedence over both run-level and project-level settings.
+
 ## Project and run workflow
 
 Project initialization, run creation, and status inspection are available:
 
 ```sh
-hermoso init /path/to/repository --json
-hermoso start feature-id /path/to/repository --json
+hermoso init /path/to/repository [--profile /path/to/profile.json] --json
+hermoso start feature-id /path/to/repository [--profile /path/to/override.json] --json
 hermoso status /path/to/repository --json
 hermoso context <project-id> <feature-id> <run-id> /path/to/repository --json
 ```

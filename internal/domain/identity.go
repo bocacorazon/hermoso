@@ -101,6 +101,7 @@ type Project struct {
 	Target        TargetIdentity `json:"target"`
 	KanbanTenant  string         `json:"kanban_tenant"`
 	CreatedAt     time.Time      `json:"created_at"`
+	ProfilePath   string         `json:"profile_path,omitempty"`
 }
 
 func (p Project) Validate() error {

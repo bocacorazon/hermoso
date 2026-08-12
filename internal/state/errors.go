@@ -10,4 +10,5 @@ var (
 	ErrCorruptState      = errors.New("corrupt Hermoso state")
 	ErrBindingConflict   = errors.New("conflicting Hermes task binding")
 	ErrUnsafeStatePath   = errors.New("unsafe Hermoso state path")
+	ErrProfileNotConfigured = errors.New("no profile configured for project or run")
 )
