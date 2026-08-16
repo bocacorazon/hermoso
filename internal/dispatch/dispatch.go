@@ -67,6 +67,7 @@ type Card struct {
 	WorkspaceKind        string                       `json:"workspace_kind"`
 	WorkspacePath        string                       `json:"workspace_path"`
 	AssignedProfile      string                       `json:"assigned_profile"`
+	Tier                 string                       `json:"tier,omitempty"`
 	ForcedSkills         []domain.SkillBinding        `json:"forced_skills"`
 	RuntimeBudgetSeconds uint64                       `json:"runtime_budget_seconds"`
 	GoalMode             string                       `json:"goal_mode,omitempty"`
@@ -160,6 +161,7 @@ func Compile(graph domain.WorkGraph, config Config) (Plan, error) {
 			WorkspaceKind:        WorkspaceKindWorktree,
 			WorkspacePath:        workspacePath,
 			AssignedProfile:      item.Worker.Profile,
+		Tier:                 item.Worker.Tier,
 			ForcedSkills:         cloneSkills(item.Worker.Skills),
 			RuntimeBudgetSeconds: budget,
 			GoalMode:             goalMode,

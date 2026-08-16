@@ -25,7 +25,8 @@
     "integration": {
       "profile": "default",
       "skills": ["hermoso-construction", "test-driven-development", "systematic-debugging"],
-      "goal_mode": "integration"
+      "goal_mode": "integration",
+      "tier": "tier-0-local"
     },
     "verification": {
       "profile": "default",

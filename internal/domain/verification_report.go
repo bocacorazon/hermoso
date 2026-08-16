@@ -118,12 +118,14 @@ type RemediationSpec struct {
 	Context          ContextRef        `json:"context"`
 	FailedReportHash string            `json:"failed_report_hash"`
 	Needs            []RemediationNeed `json:"needs"`
+	Tier             string            `json:"tier,omitempty"`
 	CreatedAt        time.Time         `json:"created_at"`
 }
 
 type SkillRemediation struct {
 	Needs []RemediationNeed `json:"needs"`
 	Graph WorkGraph         `json:"graph"`
+	Tier  string            `json:"tier,omitempty"`
 }
 
 type GherkinPublication struct {

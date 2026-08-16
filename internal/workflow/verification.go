@@ -773,6 +773,7 @@ func (s Service) PutRemediation(
 			Context:          r.Context,
 			FailedReportHash: attempt.ReportHash,
 			Needs:            spec.Needs,
+			Tier:             spec.Tier,
 			CreatedAt:        attempt.Report.CompletedAt,
 		}
 		round := domain.ConstructionState{

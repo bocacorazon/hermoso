@@ -13,6 +13,7 @@ type SkillBinding struct {
 type Worker struct {
 	Profile string         `json:"profile"`
 	Skills  []SkillBinding `json:"skills"`
+	Tier    string         `json:"tier,omitempty"`
 }
 
 type WorkItem struct {
@@ -93,6 +94,9 @@ func (g WorkGraph) Validate() error {
 func validateWorker(path string, worker Worker, errs *ValidationErrors) {
 	if !profilePattern.MatchString(worker.Profile) {
 		errs.add(path+".profile", "must be a valid non-empty profile name")
+	}
+	if worker.Tier != "" && !profilePattern.MatchString(worker.Tier) {
+		errs.add(path+".tier", "must be a valid tier name (alphanumeric, dots, underscores, hyphens, slashes)")
 	}
 	if len(worker.Skills) == 0 {
 		errs.add(path+".skills", "must contain at least one ordered skill binding")

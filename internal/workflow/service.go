@@ -33,6 +33,7 @@ type Profile struct {
 			Profile  string   `json:"profile"`
 			Skills   []string `json:"skills"`
 			GoalMode string   `json:"goal_mode"`
+			Tier     string   `json:"tier,omitempty"`
 		} `json:"integration"`
 	} `json:"phases"`
 	Dispatch struct {

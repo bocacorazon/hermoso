@@ -217,6 +217,7 @@ func definitions() map[string]any {
 		"worker": object([]string{"profile", "skills"}, map[string]any{
 			"profile": map[string]any{"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$"},
 			"skills":  array(ref("skill"), 1),
+			"tier":    map[string]any{"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$"},
 		}),
 		"reference": object([]string{"context", "kind", "path", "revision", "hash"}, map[string]any{
 			"context": ref("context"), "kind": nonEmptyString(), "path": nonEmptyString(), "revision": positiveInteger(),
