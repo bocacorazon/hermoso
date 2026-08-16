@@ -526,3 +526,26 @@ func decodeMap(t *testing.T, input any, output any) {
 		t.Fatal(err)
 	}
 }
+
+func TestCreateFeatureArtifacts(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := createFeatureArtifacts(dir, "my-feature"); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"docs/features/my-feature",
+		"docs/features/my-feature/implementation",
+		"docs/features/my-feature/tasks",
+		"docs/features/my-feature/README.md",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, path)); err != nil {
+			t.Errorf("missing %q: %v", path, err)
+		}
+	}
+	// Idempotent — second call should not error.
+	if err := createFeatureArtifacts(dir, "my-feature"); err != nil {
+		t.Errorf("second call failed: %v", err)
+	}
+}

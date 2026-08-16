@@ -378,9 +378,39 @@ func (a application) runStart(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.stateFailure(err)
 	}
+	if err := createFeatureArtifacts(path, args[0]); err != nil {
+		// Non-fatal — log but don't fail the run.
+		// The directory may already exist or the repo may be read-only.
+		fmt.Fprintf(a.deps.Stderr, "warning: feature artifacts: %v\n", err)
+	}
 	return a.out.success("start", map[string]any{
 		"run": run,
 	}, fmt.Sprintf("started run %s for feature %s\n", run.Context.RunID, run.Context.FeatureID))
+}
+
+// createFeatureArtifacts creates the docs/features/[feature-slug]/ scaffold in the target repo.
+func createFeatureArtifacts(repoRoot, featureID string) error {
+	slug := featureID
+	base := filepath.Join(repoRoot, "docs", "features", slug)
+	dirs := []string{
+		base,
+		filepath.Join(base, "implementation"),
+		filepath.Join(base, "tasks"),
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return fmt.Errorf("create feature artifact dir %q: %w", d, err)
+		}
+	}
+	// Write a stub README if it doesn't exist.
+	readme := filepath.Join(base, "README.md")
+	if _, err := os.Stat(readme); os.IsNotExist(err) {
+		content := fmt.Sprintf("# %s\n\nFeature artifacts for %s.\n\n## Structure\n\n- `design/` — Feature design (authored during design phase)\n- `implementation/` — Delivery summary and test results\n- `tasks/` — Per-task notes, research, decisions\n", featureID, featureID)
+		if err := os.WriteFile(readme, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("write feature README: %w", err)
+		}
+	}
+	return nil
 }
 
 func (a application) runStatus(ctx context.Context, args []string) int {
