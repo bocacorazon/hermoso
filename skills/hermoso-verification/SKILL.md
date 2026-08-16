@@ -174,6 +174,27 @@ The skill provides the qualitative assessment (pass/fail, reasoning, criteria).
   requirements, criteria, surfaces, and the skill-authored remediation
   guidance — not hidden scenarios or fixtures.
 - **Second fail:** the run is blocked. Do not create a third round.
+- **Test defect (amendment):** When verification failures are caused by bugs
+  in the sealed test artifacts themselves — wrong API assumptions, incorrect
+  mock patterns, wrong constructor signatures — not by defects in the
+  construction code, author a corrected verification contract with the
+  revision bumped and use:
+
+  ```sh
+  hermoso verification amend <project-id> <feature-id> <run-id> <repository> <contract-path> --json
+  ```
+
+  This re-seals the corrected artifacts, archives old attempts as incidents,
+  resets the attempt counter, and transitions to `awaiting_verification`. No
+  re-approval or re-construction is needed — the feature design is unchanged.
+  After amending, run `verification run` for a fresh attempt. The new contract
+  gets a fresh 2-attempt budget.
+
+  Amendment is allowed from `verification/blocked` or
+  `construction/awaiting_verification`. It does NOT consume a verification
+  attempt — the old attempts tested a different (buggy) contract and are
+  archived. To distinguish from remediation: remediation fixes the code,
+  amendment fixes the tests.
 - **Blocked/inconclusive:** surface the persisted findings for human action. If
   the external verifier condition is corrected, run `hermoso resume ... --json`
   and retry `verification run`; the incident report remains archived without

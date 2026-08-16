@@ -1007,3 +1007,4 @@ func decodeContract(kind contracts.Kind, data []byte, execution domain.ContextRe
 	}
 	return nil
 }
+

@@ -45,7 +45,7 @@ Usage:
   hermoso context <project-id> <feature-id> <run-id> <repository>
   hermoso model <build|status|query|explain> ...
   hermoso design put <project-id> <feature-id> <run-id> <repository> <path>
-  hermoso verification <put|run|judge|remediate|resolve> ...
+  hermoso verification <put|run|judge|remediate|resolve|amend> ...
   hermoso approve design <project-id> <feature-id> <run-id> <repository> <revision> <package-hash> <actor> [comment]
   hermoso graph put <project-id> <feature-id> <run-id> <repository> <path>
   hermoso construction <prepare|ready|integrate> ...
@@ -65,7 +65,7 @@ Commands:
   context    Resolve and validate one canonical execution context
   model      Build and query the repository knowledge spine
   design     Persist a context-bound feature design
-  verification Persist a hidden feature verification contract, run verifications, judge pending outcomes, or remediate failures
+  verification Persist, run, judge, remediate, resolve, or amend hidden feature verification contracts
   approve    Approve the exact current design package revision and hash
   graph      Persist a context-bound construction work graph
   construction Prepare workspaces, emit ready cards, or integrate branches
@@ -467,8 +467,8 @@ func (a application) runDesign(ctx context.Context, args []string) int {
 }
 
 func (a application) runVerificationContract(ctx context.Context, args []string) int {
-	if len(args) == 0 || (args[0] != "put" && args[0] != "run" && args[0] != "judge" && args[0] != "remediate" && args[0] != "resolve") {
-		return a.out.usageError("verification requires: put <full-context> <path> or run <full-context> or judge <full-context> <judgments-path> or remediate <full-context> <spec-path> or resolve <full-context> <resolutions-path>")
+	if len(args) == 0 || (args[0] != "put" && args[0] != "run" && args[0] != "judge" && args[0] != "remediate" && args[0] != "resolve" && args[0] != "amend") {
+		return a.out.usageError("verification requires: put <full-context> <path> or run <full-context> or judge <full-context> <judgments-path> or remediate <full-context> <spec-path> or resolve <full-context> <resolutions-path> or amend <full-context> <contract-path>")
 	}
 	action := args[0]
 	store, execution, rest, err := a.resolve(ctx, args[1:])
@@ -553,6 +553,43 @@ func (a application) runVerificationContract(ctx context.Context, args []string)
 			"verification remediate",
 			map[string]any{"run": run, "changed": changed},
 			fmt.Sprintf("remediation round %d persisted\n", len(run.ConstructionRounds)),
+		)
+	}
+	if action == "amend" {
+		if len(rest) != 1 {
+			return a.out.usageError("verification amend requires exactly one contract JSON path after full context")
+		}
+		data, err := a.deps.FS.ReadFile(rest[0])
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+		}
+		var contract domain.FeatureVerificationContract
+		if err := json.Unmarshal(data, &contract); err != nil {
+			return a.out.failure(ExitFailure, ErrorValidation, fmt.Sprintf("decode verification contract: %v", err))
+		}
+		if err := contract.Validate(); err != nil {
+			return a.out.failure(ExitFailure, ErrorValidation, err.Error())
+		}
+		assets := make(map[string][]byte, len(contract.Artifacts))
+		base := filepath.Dir(rest[0])
+		for _, artifact := range contract.Artifacts {
+			content, err := a.deps.FS.ReadFile(filepath.Join(base, filepath.FromSlash(artifact.Path)))
+			if err != nil {
+				return a.out.failure(
+					ExitFailure, ErrorInternal,
+					fmt.Sprintf("read verification artifact %q: %v", artifact.Path, err),
+				)
+			}
+			assets[artifact.Path] = content
+		}
+		run, changed, err := service.AmendVerification(ctx, execution, data, assets)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorState, err.Error())
+		}
+		return a.out.success(
+			"verification amend",
+			map[string]any{"run": run, "changed": changed},
+			fmt.Sprintf("amended verification contract revision %d, attempts reset\n", run.Design.Verification.Revision),
 		)
 	}
 	if len(rest) != 1 {
