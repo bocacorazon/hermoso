@@ -791,6 +791,12 @@ func checkBlock(worktree Worktree, checks []CheckResult, err error) *BlockState 
 	return block
 }
 
+// RunChecks executes baseline check commands in the given worktree directory.
+// It is the exported wrapper around runChecks, used by the release phase.
+func (m *Manager) RunChecks(ctx context.Context, worktree Worktree, checks []string) ([]CheckResult, error) {
+	return runChecks(ctx, worktree.Path, checks)
+}
+
 func runChecks(ctx context.Context, path string, checks []string) ([]CheckResult, error) {
 	results := make([]CheckResult, 0, len(checks))
 	for _, command := range checks {

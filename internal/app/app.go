@@ -53,6 +53,7 @@ Usage:
   hermoso work <start|complete|block> ...
   hermoso result put <project-id> <feature-id> <run-id> <repository> <path>
   hermoso resume <project-id> <feature-id> <run-id> <repository>
+  hermoso release <project-id> <feature-id> <run-id> <repository> [check-commands...]
 
 Commands:
   help       Show this help
@@ -73,6 +74,7 @@ Commands:
   work       Start, complete, or block a synchronized work item
   result     Persist a construction phase result
   resume     Resume blocked construction or retry blocked verification
+  release    Transition a verified run to released, optionally running BDD regression checks
 
 Options:
   -h, --help  Show this help
@@ -168,6 +170,8 @@ func (a application) run(ctx context.Context, args []string) int {
 		return a.runResult(ctx, args[1:])
 	case "resume":
 		return a.runResume(ctx, args[1:])
+	case "release":
+		return a.runRelease(ctx, args[1:])
 	default:
 		return a.out.usageError(fmt.Sprintf("unknown command %q", args[0]))
 	}
@@ -881,6 +885,25 @@ func (a application) runResume(ctx context.Context, args []string) int {
 		return a.out.failure(ExitFailure, ErrorState, err.Error())
 	}
 	return a.out.success("resume", map[string]any{"run": run, "changed": changed}, "run resumed from durable state\n")
+}
+
+func (a application) runRelease(ctx context.Context, args []string) int {
+	store, execution, rest, err := a.resolve(ctx, args)
+	if err != nil {
+		return a.stateFailure(err)
+	}
+	service, err := a.service(store)
+	if err != nil {
+		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+	}
+	run, result, err := service.Release(ctx, execution, rest)
+	if err != nil {
+		return a.out.failure(ExitFailure, ErrorState, err.Error())
+	}
+	return a.out.success("release", map[string]any{
+		"run":    run,
+		"checks": result.Checks,
+	}, fmt.Sprintf("released run %s\n", run.Context.RunID))
 }
 
 func (a application) stateFailure(err error) int {

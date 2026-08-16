@@ -549,3 +549,49 @@ func TestCreateFeatureArtifacts(t *testing.T) {
 		t.Errorf("second call failed: %v", err)
 	}
 }
+
+func TestRunStartCreatesFeatureArtifacts(t *testing.T) {
+	t.Parallel()
+
+	repo := testutil.NewRepository(t)
+	var stdout, stderr bytes.Buffer
+	deps := testDependencies(&stdout, &stderr)
+	if code := Run(context.Background(), []string{"init", repo.Root, "--json"}, deps); code != ExitOK {
+		t.Fatalf("init: code=%d output=%s", code, stdout.String())
+	}
+	stdout.Reset()
+	if code := Run(context.Background(), []string{"start", "feature-artifacts-test", repo.Root, "--json"}, deps); code != ExitOK {
+		t.Fatalf("start: code=%d output=%s", code, stdout.String())
+	}
+	for _, path := range []string{
+		"docs/features/feature-artifacts-test",
+		"docs/features/feature-artifacts-test/implementation",
+		"docs/features/feature-artifacts-test/tasks",
+		"docs/features/feature-artifacts-test/README.md",
+	} {
+		if _, err := os.Stat(filepath.Join(repo.Root, path)); err != nil {
+			t.Errorf("missing %q: %v", path, err)
+		}
+	}
+}
+
+func TestRunReleaseHelpAndError(t *testing.T) {
+	t.Parallel()
+
+	// Help text includes release command.
+	var stdout, stderr bytes.Buffer
+	Run(context.Background(), nil, testDependencies(&stdout, &stderr))
+	if !strings.Contains(stdout.String(), "release") {
+		t.Errorf("help text does not mention release: %q", stdout.String())
+	}
+
+	// Release on an uninitialized repo fails with state error.
+	repo := testutil.NewRepository(t)
+	stdout.Reset()
+	stderr.Reset()
+	deps := testDependencies(&stdout, &stderr)
+	code := Run(context.Background(), []string{"release", "p", "f", "r", repo.Root, "--json"}, deps)
+	if code != ExitFailure {
+		t.Errorf("release on uninitialized repo: code=%d, want %d", code, ExitFailure)
+	}
+}

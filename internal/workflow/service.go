@@ -1008,3 +1008,93 @@ func decodeContract(kind contracts.Kind, data []byte, execution domain.ContextRe
 	return nil
 }
 
+// Release transitions a run from awaiting_release through the release phase
+// to released. It first moves the run into the release phase (pending → in_progress),
+// runs any provided check commands in the feature worktree, and then transitions
+// to released on success or blocked on check failure.
+func (s Service) Release(
+	ctx context.Context,
+	execution domain.ContextRef,
+	checks []string,
+) (domain.Run, repository.IntegrationResult, error) {
+	run, err := s.Store.Run(ctx, execution)
+	if err != nil {
+		return domain.Run{}, repository.IntegrationResult{}, err
+	}
+	if run.Phase != domain.PhaseVerification || run.Status != domain.StatusAwaitingRelease {
+		return domain.Run{}, repository.IntegrationResult{}, errors.New("release requires a run in awaiting_release state")
+	}
+	if run.Publication == nil {
+		return domain.Run{}, repository.IntegrationResult{}, errors.New("release requires published Gherkin")
+	}
+
+	// Transition: Verification/AwaitingRelease → Release/Pending
+	run, err = s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+		if r.Phase != domain.PhaseVerification || r.Status != domain.StatusAwaitingRelease {
+			return errors.New("run is no longer awaiting release")
+		}
+		r.Phase = domain.PhaseRelease
+		r.Status = domain.StatusPending
+		r.Revision++
+		r.UpdatedAt = s.Now().UTC()
+		return nil
+	})
+	if err != nil {
+		return run, repository.IntegrationResult{}, err
+	}
+
+	// Transition: Release/Pending → Release/InProgress
+	run, err = s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+		if r.Phase != domain.PhaseRelease || r.Status != domain.StatusPending {
+			return errors.New("run is no longer in release/pending")
+		}
+		r.Phase = domain.PhaseRelease
+		r.Status = domain.StatusInProgress
+		r.Revision++
+		r.UpdatedAt = s.Now().UTC()
+		return nil
+	})
+	if err != nil {
+		return run, repository.IntegrationResult{}, err
+	}
+
+	// Run optional checks in the feature worktree.
+	result := repository.IntegrationResult{}
+	construction := run.CurrentConstruction()
+	if construction == nil {
+		return run, result, errors.New("release requires a construction with a feature workspace")
+	}
+	feature := repoWorkspace(construction.Feature)
+	if len(checks) > 0 {
+		checkResults, checkErr := s.Manager.RunChecks(ctx, feature, checks)
+		result.Checks = checkResults
+		if checkErr != nil {
+			// Transition: Release/InProgress → Release/Blocked
+			run, _ = s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+				if r.Phase != domain.PhaseRelease || r.Status != domain.StatusInProgress {
+					return nil
+				}
+				r.Phase = domain.PhaseRelease
+				r.Status = domain.StatusBlocked
+				r.Revision++
+				r.UpdatedAt = s.Now().UTC()
+				return nil
+			})
+			return run, result, checkErr
+		}
+	}
+
+	// Transition: Release/InProgress → Release/Released
+	run, err = s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+		if r.Phase != domain.PhaseRelease || r.Status != domain.StatusInProgress {
+			return errors.New("run is no longer in release/in_progress")
+		}
+		r.Phase = domain.PhaseRelease
+		r.Status = domain.StatusReleased
+		r.Revision++
+		r.UpdatedAt = s.Now().UTC()
+		return nil
+	})
+	return run, result, err
+}
+

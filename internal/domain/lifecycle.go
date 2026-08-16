@@ -483,7 +483,7 @@ func statusAllowed(phase Phase, status RunStatus) bool {
 	case PhaseVerification:
 		return status == StatusPending || status == StatusInProgress || status == StatusCompleted || status == StatusAwaitingRelease || status == StatusAwaitingJudgment
 	case PhaseRelease:
-		return status == StatusPending || status == StatusInProgress || status == StatusCompleted || status == StatusReleased
+		return status == StatusPending || status == StatusInProgress || status == StatusCompleted || status == StatusReleased || status == StatusBlocked
 	default:
 		return false
 	}
