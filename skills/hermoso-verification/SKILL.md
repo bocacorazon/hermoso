@@ -203,3 +203,32 @@ The skill provides the qualitative assessment (pass/fail, reasoning, criteria).
 
 The production verdict remains bound to the pre-publication candidate commit.
 The later publication commit may contain only the approved Gherkin artifacts.
+
+## Release Phase
+
+After verification passes and Gherkin is published, the run is in
+`awaiting_release`. To transition to `released`, run:
+
+```sh
+hermoso release <project-id> <feature-id> <run-id> <repository> [check-commands...] --json
+```
+
+The release command:
+
+- Transitions through `Release/Pending → Release/InProgress → Release/Released`
+- Optionally runs check commands (e.g. `go test ./...`, `behave features/`) in the
+  feature worktree. Pass them as trailing arguments:
+  ```sh
+  hermoso release proj feat run . "go test ./..." "behave features/" --json
+  ```
+- On check failure, transitions to `Release/Blocked`. Retry with `hermoso resume`.
+- With no check commands, transitions directly to `Released`.
+
+The BDD regression suite is the `features/` directory at the repo root, which
+accumulates all published Gherkin from each feature via `publishPassingGherkin`.
+At release, pass the BDD runner command as a check to catch regressions across
+features — no separate copy of the `.feature` files is needed.
+
+Feature artifacts (design, implementation notes, task notes) live in
+`docs/features/[feature-id]/` in the target repo, created by `hermoso start`.
+These are committed alongside code and visible to all developers.
