@@ -46,6 +46,7 @@ type Run struct {
 	VerificationIncidents []VerificationAttempt `json:"verification_incidents,omitempty"`
 	VerificationBlocker   string                `json:"verification_blocker,omitempty"`
 	Publication           *GherkinPublication   `json:"gherkin_publication,omitempty"`
+	ReleaseCommit         string                `json:"release_commit,omitempty"`
 	TaskBindings          []TaskBinding         `json:"task_bindings,omitempty"`
 	Evidence              []Evidence            `json:"evidence,omitempty"`
 	ProfilePath           string                `json:"profile_path,omitempty"`

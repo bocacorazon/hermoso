@@ -797,6 +797,52 @@ func (m *Manager) RunChecks(ctx context.Context, worktree Worktree, checks []str
 	return runChecks(ctx, worktree.Path, checks)
 }
 
+// MergeToDefault merges the feature worktree's branch into the repository's
+// default branch (e.g. main) in the root working tree. It is used by the
+// release phase to publish the integrated feature to the default branch.
+// The root working tree must be clean; if it is on a different branch the
+// default branch is checked out first. Returns the resulting HEAD commit.
+func (m *Manager) MergeToDefault(ctx context.Context, feature Worktree, defaultBranch string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := validateBranch(defaultBranch); err != nil {
+		return "", fmt.Errorf("default branch: %w", err)
+	}
+	if err := m.validateManaged(feature); err != nil {
+		return "", err
+	}
+	featureCommit, err := git(feature.Path, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	// If the feature is already an ancestor of the default branch, nothing to merge.
+	if gitSuccess(m.root, "merge-base", "--is-ancestor", featureCommit, defaultBranch) {
+		return git(m.root, "rev-parse", defaultBranch)
+	}
+	// Checkout the default branch in root if not already on it.
+	currentBranch, err := git(m.root, "symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("root repository is in detached HEAD, cannot merge to %s: %w", defaultBranch, err)
+	}
+	if currentBranch != defaultBranch {
+		if _, err := git(m.root, "checkout", defaultBranch); err != nil {
+			return "", fmt.Errorf("checkout default branch %s: %w", defaultBranch, err)
+		}
+	}
+	// Merge the feature branch with --no-ff to preserve the feature topology.
+	// We don't require a fully clean root because .hermoso/ state files may have
+	// uncommitted changes from the lifecycle — git merge only fails if the merge
+	// conflicts with those local changes.
+	if _, err := git(m.root, "merge", "--no-ff", "--no-edit", feature.Branch); err != nil {
+		if inProgress(m.root) {
+			return "", fmt.Errorf("%w: merge %s into %s", ErrConflict, feature.Branch, defaultBranch)
+		}
+		return "", fmt.Errorf("merge %s into %s: %w", feature.Branch, defaultBranch, err)
+	}
+	return git(m.root, "rev-parse", "HEAD")
+}
+
 func runChecks(ctx context.Context, path string, checks []string) ([]CheckResult, error) {
 	results := make([]CheckResult, 0, len(checks))
 	for _, command := range checks {

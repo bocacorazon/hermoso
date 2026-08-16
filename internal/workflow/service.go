@@ -1084,6 +1084,27 @@ func (s Service) Release(
 		}
 	}
 
+	// Merge the feature branch into the repository's default branch (e.g. main).
+	defaultBranch := execution.Repository.DefaultBranch
+	if defaultBranch == "" {
+		return run, result, errors.New("release requires a default branch in the project context")
+	}
+	mergeCommit, mergeErr := s.Manager.MergeToDefault(ctx, feature, defaultBranch)
+	if mergeErr != nil {
+		// Transition: Release/InProgress → Release/Blocked
+		run, _ = s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+			if r.Phase != domain.PhaseRelease || r.Status != domain.StatusInProgress {
+				return nil
+			}
+			r.Phase = domain.PhaseRelease
+			r.Status = domain.StatusBlocked
+			r.Revision++
+			r.UpdatedAt = s.Now().UTC()
+			return nil
+		})
+		return run, result, mergeErr
+	}
+
 	// Transition: Release/InProgress → Release/Released
 	run, err = s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
 		if r.Phase != domain.PhaseRelease || r.Status != domain.StatusInProgress {
@@ -1091,6 +1112,7 @@ func (s Service) Release(
 		}
 		r.Phase = domain.PhaseRelease
 		r.Status = domain.StatusReleased
+		r.ReleaseCommit = mergeCommit
 		r.Revision++
 		r.UpdatedAt = s.Now().UTC()
 		return nil

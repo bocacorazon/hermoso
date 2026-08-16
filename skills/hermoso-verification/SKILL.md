@@ -222,7 +222,13 @@ The release command:
   hermoso release proj feat run . "go test ./..." "behave features/" --json
   ```
 - On check failure, transitions to `Release/Blocked`. Retry with `hermoso resume`.
-- With no check commands, transitions directly to `Released`.
+- After checks pass (or if no checks are given), merges the feature branch into the
+  repository's default branch (e.g. `main`) with `--no-ff` to preserve the feature
+  topology. The resulting merge commit is recorded as `release_commit` on the run.
+- If the merge conflicts, transitions to `Release/Blocked`. Resolve conflicts in
+  the root repo and retry with `hermoso resume`.
+- On success, transitions to `Release/Released`. The default branch now contains
+  the feature.
 
 The BDD regression suite is the `features/` directory at the repo root, which
 accumulates all published Gherkin from each feature via `publishPassingGherkin`.

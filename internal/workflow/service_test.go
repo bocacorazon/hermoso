@@ -1335,3 +1335,61 @@ func (f *fakeKanban) TaskIDs() []string {
 	sort.Strings(ids)
 	return ids
 }
+
+func TestReleaseMergesFeatureToDefaultBranch(t *testing.T) {
+	t.Parallel()
+	repo, service, execution, profile := setupVerificationRun(t, "release-merge", false)
+	run := completeVerificationCandidate(t, service, execution, profile)
+
+	run, report, err := service.RunVerification(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict == domain.VerificationPending {
+		run, report, err = service.PutSurfaceResolutions(context.Background(), execution, []domain.SurfaceResolution{
+			{SurfaceID: "surface-feature", Status: "resolved", Summary: "resolved by test"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if report.Verdict != domain.VerificationPass || run.Status != domain.StatusAwaitingRelease {
+		t.Fatalf("verification: verdict=%s status=%s", report.Verdict, run.Status)
+	}
+
+	// Release — the merge to the default branch is the critical operation.
+	run, result, err := service.Release(context.Background(), execution, nil)
+	if err != nil {
+		t.Fatalf("release: err=%v result=%#v", err, result)
+	}
+	if run.Phase != domain.PhaseRelease || run.Status != domain.StatusReleased {
+		t.Fatalf("release: phase=%s status=%s", run.Phase, run.Status)
+	}
+	if run.ReleaseCommit == "" {
+		t.Fatal("release commit is empty")
+	}
+
+	// The default branch (main) must now contain the feature branch.
+	featureBranch := run.CurrentConstruction().Feature.Branch
+	if !gitAncestor(repo, featureBranch, run.ReleaseCommit) {
+		t.Fatalf("feature branch %s is not an ancestor of release commit %s", featureBranch, run.ReleaseCommit)
+	}
+
+	// The merge must be --no-ff (two parents on the merge commit).
+	parents := strings.Fields(repo.Git("rev-list", "--parents", "-n", "1", run.ReleaseCommit))
+	if len(parents) < 3 { // commit + 2 parents
+		t.Fatalf("expected --no-ff merge with 2 parents, got %d: %v", len(parents)-1, parents)
+	}
+
+	// HEAD of the root repo must be the release commit.
+	head := repo.Git("rev-parse", "HEAD")
+	if head != run.ReleaseCommit {
+		t.Fatalf("root HEAD=%s, want release commit %s", head, run.ReleaseCommit)
+	}
+
+	// The root repo must be on the default branch.
+	current := repo.Git("branch", "--show-current")
+	if current != execution.Repository.DefaultBranch {
+		t.Fatalf("root branch=%s, want %s", current, execution.Repository.DefaultBranch)
+	}
+}
