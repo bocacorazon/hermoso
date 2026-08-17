@@ -29,7 +29,7 @@
       "tier": "tier-0-local"
     },
     "verification": {
-      "profile": "default",
+      "profile": "qwen38",
       "skills": ["hermoso-verification", "systematic-debugging"]
     }
   },
