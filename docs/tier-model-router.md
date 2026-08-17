@@ -766,6 +766,13 @@ tiers:
         base_url: http://127.0.0.1:8082/v1
         model: gemma-4-31b-it
         api_key: none
+      - name: qwen-3.8-27b
+        provider: local
+        base_url: http://127.0.0.1:8084/v1
+        model: qwen-3.8-27b
+        api_key: none
+        # batch-only thinking model: correctness-optimized, not for interactive
+        # routing. Assign explicitly to E2 (judge) and correctness-critical C2.
 
   tier-1-cheap:
     strategy: round-robin

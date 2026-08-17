@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-The local-only benchmark proved that 4 local models can cover most coding tasks, but three blind spots remain: deep race-condition analysis, multi-turn signature preservation, and architectural judgment on ambiguous specs. Frontier models (via OpenRouter) can fill these gaps without replacing local models for high-volume work.
+The local-only benchmark proved that 5 local models can cover most coding tasks, but three blind spots remain: deep race-condition analysis, multi-turn signature preservation, and architectural judgment on ambiguous specs. Frontier models (via OpenRouter) can fill these gaps without replacing local models for high-volume work.
 
 **The strategy: local models generate, frontier models verify.** 80-90% of token volume stays on local hardware (free). Frontier models see only diffs, reviews, and judgments — not full file contents. This keeps cost low while catching the blind spots that all local models share.
 
@@ -27,8 +27,24 @@ Hermoso's current 5 lifecycle roles are too coarse for per-task model assignment
 | qwen-64k | qwen-35b-a3b-64k | MoE | ~3.5B | 29-35 | 8080 | Architecture, test pass rate |
 | qwen-27b | qwen-qwen2.5-27b | Dense | 27B | 25-31 | 8081 | Reliability, multi-turn coherence |
 | gemma | gemma-4-31b-it | Dense | 31B | 20-28 | 8082 | Balance, concise judgments |
+| qwen-3.8-27b | Qwen3.8-27B (thinking) | Dense | 27B | 20-26 | 8084 | Correctness (best), multi-turn, docs — at 10-40× latency |
 
 **Constraint:** Only one model fits in 32GB VRAM at a time. Switching requires stop/start (~15s). Single-slot llama.cpp serializes all requests — no concurrent inference.
+
+> **qwen-3.8-27b is a thinking model** (emits an explicit `reasoning_content`
+> stream). It is **batch-only** — not for interactive use. Its benchmark profile:
+>
+> | Dimension | Result (vs the 4 Qwen 3.6 models) |
+> |-----------|-----------------------------------|
+> | Go from-scratch | **35/35 tests + 3/3 docs** — best correctness, but 23.5 min |
+> | Multi-turn | **5/5 turns** — only model to avoid the signature-change trap |
+> | Edits | 4/4 correct, but 393s/edit (39× slower than qwen3-coder) |
+> | Debugging | 4/6 FULL + 1 PARTIAL + 1 timeout (reasoning runaway on TDD prompt) |
+> | Long context | correct at 20K/40K, but 47-54 min (re-reasons the whole haystack) |
+> | Long output | truncates at 32K tokens (Java port) — reasoning eats the budget |
+>
+> **Net:** a correctness specialist for batch work — the judge and the
+> correctness-critical generator below — never for anything interactive.
 
 ### Frontier Models (via OpenRouter — pay per token)
 
@@ -60,8 +76,8 @@ Local model generates  →  Frontier model reviews  →  Local model remediates
 
 From the benchmark, three blind spots that no local model crosses:
 
-1. **Race-condition depth** (run-006 Bug B): All 4 local models add the obvious mutex but miss the JSON-encoder-reads-after-unlock race. A frontier model reviewing the diff can catch this.
-2. **Signature-change trap** (run-007 turn 5): All local models modify existing function signatures instead of adding new methods. A frontier code reviewer checking the diff against the design contract catches this before it propagates.
+1. **Race-condition depth** (run-006 Bug B): All 5 local models — including the thinking model qwen-3.8-27b — add the obvious mutex but miss the JSON-encoder-reads-after-unlock race. A frontier model reviewing the diff can catch this.
+2. **Signature-change trap** (run-007 turn 5): Four of five local models modify existing function signatures instead of adding new methods. **qwen-3.8-27b is the exception** — its thinking mode checked for existing callers and cleared all 5 turns. Still, a frontier code reviewer catches this cheaply and reliably without the 23-min-per-turn latency qwen-3.8-27b pays for it.
 3. **Over-engineering on open prompts** (run-006 qwen-64k): Local models invent new API shapes under open-ended diagnosis prompts. A frontier design review before construction catches ambiguous specs.
 
 ### What Stays Local
@@ -144,11 +160,11 @@ Currently: `hermoso-construction` + `kanban-worker` (one worker type handles all
 
 **Responsibility:** Greenfield implementation — new packages, new interfaces, new files. Architecture-heavy code where structure matters.
 
-**Model:** Tier 0 local — qwen-64k (best architecture, 23/24 tests pass). Or Tier 1 (cheap frontier) for complex modules where architecture mistakes are costly.
+**Model:** Tier 0 local — qwen-64k (best architecture, 23/24 tests pass). Or qwen-3.8-27b for correctness-critical modules. Or Tier 1 (cheap frontier) for complex modules where architecture mistakes are costly.
 
-**Why:** qwen-64k writes the best-structured code locally. With TDD prompts (prevents over-engineering) and a frontier code reviewer catching signature changes, it's the best local choice. For modules with complex interfaces or cross-package dependencies, a cheap frontier model may produce better code in one pass.
+**Why:** qwen-64k writes the best-structured code locally. With TDD prompts (prevents over-engineering) and a frontier code reviewer catching signature changes, it's the best local choice for most modules. **qwen-3.8-27b is the correctness upgrade**: 35/35 tests pass vs qwen-64k's 23/24, and it is the only model that avoids the signature-change trap. It's ~3× slower than qwen-64k and 39× slower than qwen3-coder, but construction workers run autonomously in batch — no human is waiting — so for the correctness-critical modules (domain logic, storage, cross-package interfaces) the extra latency buys a lower remediation rate. For modules with complex interfaces, a cheap frontier model may still produce better code in one pass.
 
-**Tandem pattern:** Local qwen-64k writes the code → frontier cheap-tier reviews the diff (Agent R1) → if issues found, local qwen3-coder remediates (Agent C3).
+**Tandem pattern:** Local qwen-64k (or qwen-3.8-27b for correctness-critical modules) writes the code → frontier cheap-tier reviews the diff (Agent R1) → if issues found, local qwen3-coder remediates (Agent C3).
 
 #### Agent C3: Code Editor
 
@@ -196,11 +212,11 @@ Currently: `hermoso-verification` (one agent runs mechanical checks and makes qu
 
 **Responsibility:** Rubric assessment — read evidence, apply rubric criteria, produce pass/fail with reasoning. Surface resolution (matching planned surfaces to implemented model nodes).
 
-**Model:** Tier 2 (mid frontier). Tier 0 local (gemma) as fallback.
+**Model:** Tier 2 (mid frontier). Tier 0 local (qwen-3.8-27b) as the correctness-optimized fallback; gemma as the fast fallback.
 
-**Why:** The qualitative judge is the final quality gate before release. It needs to read code carefully, reason about whether it meets rubric criteria, and produce a defensible judgment. Gemma is the most reliable local model (no over-engineering, most concise, never regresses), but a mid-tier frontier model provides more consistent reasoning and catches subtle issues that gemma misses (like the race-condition blind spot).
+**Why:** The qualitative judge is the final quality gate before release. It needs to read code carefully, reason about whether it meets rubric criteria, and produce a defensible judgment. qwen-3.8-27b is the strongest *local* judge: its thinking mode is exactly what careful rubric judgment wants (it is the only local model to reason past the signature-change trap, and it produces the most correct code). It is slow and verbose, but the judge runs in batch during verification — no human is waiting — so that latency is acceptable. A mid-tier frontier model remains primary for the highest-stakes features; gemma remains for when a fast, concise local judgment is preferred.
 
-**Tandem pattern:** For high-stakes features, run both: local gemma produces a judgment, frontier mid-tier produces a judgment. If they agree, proceed. If they disagree, escalate to human. This costs one frontier call but catches judge errors.
+**Tandem pattern:** For high-stakes features, run both: local qwen-3.8-27b produces a judgment, frontier mid-tier produces a judgment. If they agree, proceed. If they disagree, escalate to human. This costs one frontier call but catches judge errors. (gemma can substitute for qwen-3.8-27b when wall-clock matters more than correctness.)
 
 #### Agent E3: Remediation Author
 
@@ -249,12 +265,12 @@ These don't exist in the current Hermoso lifecycle. They're quality gates that r
 | V1 | Verification contract | Contract author | 2 | Frontier mid | OpenRouter |
 | V2 | Verification contract | Fixture/probe builder | 0 | qwen3-coder-30b | Local |
 | C1 | Construction | Work-graph orchestrator | 2 (or 1) | Frontier mid/cheap | OpenRouter |
-| C2 | Construction | New-code writer | 0 (or 1) | qwen-64k / frontier cheap | Local / OpenRouter |
+| C2 | Construction | New-code writer | 0 (or 1) | qwen-64k / qwen-3.8-27b (correctness-critical) / frontier cheap | Local / OpenRouter |
 | C3 | Construction | Code editor | 0 | qwen3-coder-30b | Local |
 | C4 | Construction | Test writer | 0 | qwen3-coder-30b | Local |
 | C5 | Construction | Integration manager | 1 | Frontier cheap | OpenRouter |
 | E1 | Verification | Mechanical runner | — | Go CLI (no LLM) | Hermoso binary |
-| E2 | Verification | Qualitative judge | 2 (or 0) | Frontier mid / gemma | OpenRouter / local |
+| E2 | Verification | Qualitative judge | 2 (or 0) | Frontier mid / qwen-3.8-27b (correctness) / gemma (fast) | OpenRouter / local |
 | E3 | Verification | Remediation author | 1 (or 0) | Frontier cheap / qwen3-coder | OpenRouter / local |
 | R1 | Cross-cutting | Code reviewer | 1 | Frontier cheap | OpenRouter |
 | R2 | Cross-cutting | Context monitor | — | Deterministic logic | — |
@@ -347,9 +363,9 @@ Wall-clock: 15-30 minutes per feature (local generation + frontier reviews, sequ
 | Hermoso role | Old (local-only) | New (tiered) | Change |
 |-------------|-----------------|-------------|--------|
 | Design | qwen3-coder (speed + docs) | D1: frontier mid (complex) / qwen-64k (simple) + D2: qwen3-coder (docs) | Split design architect from documenter. Frontier reviews design. |
-| Construction (new code) | qwen-64k (best architecture) | C2: qwen-64k (local) + R1: frontier cheap review | Added automated code review after every generation. |
+| Construction (new code) | qwen-64k (best architecture) | C2: qwen-64k (local) / qwen-3.8-27b (correctness-critical) + R1: frontier cheap review | Added qwen-3.8-27b for correctness-critical modules; added automated code review. |
 | Construction (edits) | qwen3-coder (speed) | C3: qwen3-coder (local) + R1: frontier cheap review | Same generation model, added frontier review. |
-| Verification (judge) | gemma (most reliable) | E2: frontier mid (primary) / gemma (fallback). Optional dual-judge. | Frontier model catches race conditions gemma misses. |
+| Verification (judge) | gemma (most reliable) | E2: frontier mid (primary) / qwen-3.8-27b (correctness fallback) / gemma (fast fallback). Optional dual-judge. | Added qwen-3.8-27b as the correctness-optimized local judge; frontier stays primary. |
 | Remediation | qwen3-coder (fast fixes) | E3: frontier cheap (spec author) + C3: qwen3-coder (fix execution) | Split spec authoring from fix execution. |
 | Release (future) | qwen3-coder | D2: qwen3-coder (docs) + E2: frontier mid (final approval) | Added frontier final approval gate. |
 | — (new) | — | C1: frontier mid/cheap (work-graph) | New agent for graph orchestration. |
@@ -367,7 +383,7 @@ These apply to all models, all tiers, all phases:
 3. **Include the failing test when available** (TDD framing)
 4. **"Ensure all imports are used and all used imports are present"**
 5. **Forbid full-file rewrites on large files** — ask for the changed function only
-6. **Disable thinking mode on clear specs** — reasoning adds latency with no quality gain
+6. **Disable thinking mode on clear specs** — reasoning adds latency with no quality gain *for the Qwen 3.6 models that can toggle it*. **Exception: qwen-3.8-27b is a fixed thinking model** — its reasoning is always on and, for stateful/correctness-critical tasks (multi-turn, rubric judgment, correctness-critical generation), that reasoning is the point. Reserve it for those batch roles; never route it to an interactive edit where the latency is pure overhead.
 
 The frontier code reviewer (R1) checks all 6 on every diff.
 
