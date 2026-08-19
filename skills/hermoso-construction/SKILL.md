@@ -37,6 +37,29 @@ design-package revision/hash is approved. The package includes a visible design
 and hidden verification contract/assets. Stop and block rather than dispatching
 from conversational memory.
 
+## Construction Plan
+
+Before authoring the work graph, produce a brief construction plan at
+`docs/features/[slug]/construction-plan.md`. This makes the decomposition
+intentional and reviewable.
+
+The plan should include:
+
+1. **Decomposition strategy** — how the approved design is broken into work
+   items and why (by layer, by feature, by dependency order).
+2. **Dependency analysis** — which items depend on which, and why. Identify
+   the critical path.
+3. **Parallelization** — which items can run in parallel and which must be
+   sequential.
+4. **Integration points** — where fan-in is needed and why.
+5. **Risk areas** — items that are uncertain, complex, or likely to need
+   iteration.
+
+For small features (1-2 work items), the plan can be 2-3 sentences. For
+complex features, write a full paragraph per section.
+
+Present the plan to the user and confirm before proceeding to graph authoring.
+
 ## Author the Work Graph
 
 Always begin with:

@@ -63,6 +63,7 @@ hermoso schema phase-result --json
 hermoso validate feature-design <path> <project-id> <feature-id> <run-id> /absolute/target/repository --json
 hermoso validate work-graph <path> <project-id> <feature-id> <run-id> /absolute/target/repository --json
 hermoso validate phase-result <path> <project-id> <feature-id> <run-id> /absolute/target/repository --json
+hermoso design begin <project-id> <feature-id> <run-id> /absolute/target/repository --json
 hermoso design put <project-id> <feature-id> <run-id> /absolute/target/repository <path> --json
 hermoso verification put <project-id> <feature-id> <run-id> /absolute/target/repository <path> --json
 hermoso approve design <project-id> <feature-id> <run-id> /absolute/target/repository <package-revision> <package-hash> <actor> [comment] --json
@@ -90,15 +91,23 @@ hermoso resume <project-id> <feature-id> <run-id> /absolute/target/repository --
    `hermoso start <feature-id> <repo> --json`.
 4. Resolve `hermoso context <project-id> <feature-id> <run-id> <repository> --json` for canonical identity. Pass these explicit values to every subsequent command — the binary validates the context against persisted state and rejects mismatches.
 5. Invoke `hermoso-design` with the complete context, absolute workspace,
-   objective, and
-   `profiles/default.yaml` bindings.
+   objective, and `profiles/default.yaml` bindings. The design skill is now a
+   multi-phase interactive process: it calls `hermoso design begin` to signal
+   active design work, asks clarifying questions, proposes alternatives,
+   adapts depth to complexity (DDD for complex features), authors contracts,
+   writes a design doc to `docs/features/[slug]/design/design.md`, and
+   presents the package for approval.
 6. Invoke `hermoso-verification-author` to create and ingest the hidden contract
    and sealed assets before any work graph is authored.
 7. Present the visible design plus verification coverage/modalities/exclusions
-   and exact package revision/hash.
+   and exact package revision/hash. The design skill may present two approval
+   options: approve now or stand down for review. If the user stands down, the
+   run stays at `awaiting_approval` — resume when the user returns by refreshing
+   state, reading the design doc, and calling `hermoso approve design`.
 8. Require an explicit user approval of that exact package. Silence,
-   earlier approval, approval of a summary, or “continue” before review is not
-   approval.
+   earlier approval, approval of a summary, or "continue" before review is not
+   approval. Deferred approval is valid — the user may review the design doc
+   and approve in a later session.
 9. If changes are requested, revise and validate again. The previous approval
    is stale.
 10. Invoke `hermoso-construction` only after exact-package approval is durably

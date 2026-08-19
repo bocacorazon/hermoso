@@ -1,200 +1,292 @@
 ---
 name: hermoso-design
-description: "Use when authoring a spine-grounded Hermoso v2 feature design with stable requirements, vocabulary, and interaction surfaces before the hidden verification contract and work graph."
-version: 1.0.0
+description: "Use when authoring a Hermoso feature design. Multi-phase interactive process: clarify, explore, propose, deepen, author, document, present. Adapts to feature complexity (small/standard/complex). Produces a design doc and supports deferred approval."
+version: 2.0.0
 author: Hermoso
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [hermoso, design, architecture, contracts, approval]
-    related_skills: [hermoso, hermoso-construction]
+    tags: [hermoso, design, interactive, ddd, artifacts]
+    related_skills: [hermoso, hermoso-verification, hermoso-construction]
 ---
 
-# Hermoso Adaptive Design Author
+# Hermoso Design — Interactive Multi-Phase Process
 
 ## Overview
 
-Turn a feature objective into a validated, spine-grounded `feature-design`.
-Adapt depth to risk; do not turn small work into a program. The hidden
-verification contract is authored next, and the work graph only after the
-complete package is approved.
-Never edit `.hermoso/**`; persist only through the CLI.
+Transform a feature objective into a validated design package (feature-design
+JSON + verification contract) through a structured, interactive process that
+adapts to the size and complexity of the feature. The process produces
+human-readable design artifacts under `docs/features/[slug]/design/` and
+culminates in a design approval that can be immediate or deferred.
 
-## Inputs
+## Entry Gate
 
-- the complete `hermoso-context/v1` object from
-  `hermoso context <project-id> <feature-id> <run-id> <absolute-repository> --json`;
-- the absolute workspace (normally the canonical repository for design);
-- objective and constraints from the developer;
-- selected profile bindings, normally `profiles/default.yaml`.
-
-Never infer identity from cwd or conversation. Pass explicit context
-(project-id, feature-id, run-id, repository) to every `hermoso` command.
-Call `hermoso context` to resolve the canonical tuple when needed. The binary
-validates context against persisted state and rejects mismatches.
-
-## Live Contract First
-
-Before drafting:
+Refresh state — never infer from memory:
 
 ```sh
 hermoso status <repository> --json
 hermoso context <project-id> <feature-id> <run-id> <repository> --json
 hermoso schema feature-design --json
 hermoso schema feature-verification-contract --json
-hermoso model status <project-id> <repository> --json
+```
+
+Verify the run is in the `design` phase. If the status is `pending`, signal the
+start of active design work:
+
+```sh
+hermoso design begin <project-id> <feature-id> <run-id> <repository> --json
+```
+
+This transitions the run to `in_progress` and confirms the design phase is
+active. If the status is already `in_progress` or `awaiting_approval`, proceed
+from where the process left off.
+
+## Phase 1: Clarify
+
+**Goal:** Understand the objective deeply enough to design well.
+
+Ask the user clarifying questions using the `clarify` tool. The number and depth
+of questions scale with complexity (see Phase 2 for complexity assessment):
+
+- **Small:** 1-3 questions about scope and acceptance criteria.
+- **Standard:** 3-6 questions covering scope, constraints, stakeholders, and
+  edge cases.
+- **Complex:** 5-10 questions covering scope, constraints, domain boundaries,
+  external systems, data flows, failure modes, and stakeholder priorities.
+
+Questions should be multiple-choice when the options are known, open-ended when
+the user needs room to explain. Do not ask questions whose answers are already
+in the model spine or the user's initial prompt.
+
+Record the user's answers. These inform the design and become part of the
+design doc.
+
+## Phase 2: Explore and Assess Complexity
+
+**Goal:** Understand the codebase context and determine feature complexity.
+
+Query the model spine:
+
+```sh
 hermoso model query <project-id> <repository> orientation --json
-hermoso model query <project-id> <repository> task <feature objective> --json
+hermoso model query <project-id> <repository> design --json
 ```
 
-The checked-in Go types and examples are explanatory only. The command output
-is authoritative. Write the artifact outside `.hermoso/**`, then validate:
+Assess complexity using these heuristics:
+
+- **Small:** Single file or module, no new interfaces, no cross-cutting
+  concerns. Example: adding a field to an existing struct, a bug fix with a
+  known location, a config flag.
+- **Standard:** Multiple files in one package, new methods on existing types,
+  small API changes. Example: a new CLI subcommand, a new endpoint on an
+  existing handler, extending a validation rule.
+- **Complex:** Cross-package changes, new abstractions, domain modeling,
+  external system integration, schema migrations, multi-session work.
+  Example: a new lifecycle phase, a new domain concept, a major refactor.
+
+Confirm the complexity assessment with the user — present your reasoning and
+ask if they agree. The complexity field in the feature-design JSON must match
+this assessment.
+
+## Phase 3: Propose Alternatives
+
+**Goal:** Present design options and let the user choose.
+
+For **small** features: propose a single approach. Briefly note why alternatives
+were rejected. No need to formally present alternatives unless the user asks.
+
+For **standard** features: propose 2-3 approaches. For each, give:
+- A one-paragraph description
+- Key trade-offs (simplicity, risk, effort)
+- Which surfaces it touches
+- A recommendation with rationale
+
+For **complex** features: propose 2-3 architectural approaches. For each, give:
+- A description with a component-level sketch
+- Trade-offs (coupling, complexity, testability, extensibility)
+- Which surfaces and domain boundaries it affects
+- Risks and mitigations
+- A recommendation with rationale
+
+Present the alternatives to the user and ask them to choose or combine elements.
+Record the decision and rationale.
+
+## Phase 4: Deepen (complex features only)
+
+**Goal:** For complex features, conduct a deeper design session.
+
+For **complex** features only (skip for small/standard), perform one or more of:
+
+- **Domain modeling (DDD):** Identify bounded contexts, aggregates, entities,
+  value objects, and domain events. Sketch the domain model. This is
+  especially valuable when the feature introduces new domain concepts or
+  changes boundaries between existing ones.
+- **Event storming:** Walk through the key scenarios as event sequences. Note
+  commands, events, and read models. This surfaces hidden dependencies and
+  sequencing constraints.
+- **Interface sketching:** Draft the key interfaces, type signatures, or API
+  contracts. This catches integration issues early.
+- **Failure analysis:** Walk through failure modes and error handling
+  strategies. What happens when the database is down? When the external API
+  returns garbage? When concurrent writes collide?
+
+Record the outputs of this phase as artifacts under
+`docs/features/[slug]/design/`:
+- `domain-model.md` — DDD artifacts (if applicable)
+- `event-storming.md` — event sequences (if applicable)
+- `interface-sketch.md` — interface drafts (if applicable)
+- `risk-analysis.md` — failure modes and mitigations
+
+This phase may span multiple sessions. If the user steps away, resume from
+where you left off when they return.
+
+## Phase 5: Author Design Contracts
+
+**Goal:** Draft the formal feature-design JSON and verification contract.
+
+This is the existing contract-authoring process, now informed by the preceding
+phases:
+
+1. Draft the feature-design JSON:
+   ```sh
+   hermoso schema feature-design --json
+   ```
+   - Set `complexity` to the Phase 2 assessment
+   - Requirements, acceptance criteria, surfaces, and terms reflect the chosen
+     alternative (Phase 3) and deepening (Phase 4)
+   - Base model reference comes from the current model snapshot
+
+2. Validate the design:
+   ```sh
+   hermoso validate feature-design <path> <project-id> <feature-id> <run-id> <repository> --json
+   ```
+
+3. Draft the verification contract:
+   ```sh
+   hermoso schema feature-verification-contract --json
+   ```
+
+4. Validate the verification contract:
+   ```sh
+   hermoso validate feature-verification-contract <path> <project-id> <feature-id> <run-id> <repository> --json
+   ```
+
+5. Persist the design:
+   ```sh
+   hermoso design put <project-id> <feature-id> <run-id> <repository> <design-path> --json
+   ```
+
+6. Persist the verification contract:
+   ```sh
+   hermoso verification put <project-id> <feature-id> <run-id> <repository> <verification-path> --json
+   ```
+
+## Phase 6: Document
+
+**Goal:** Produce a human-readable design summary at
+`docs/features/[slug]/design/design.md`.
+
+Write a markdown file that includes:
+
+1. **Feature summary** — one paragraph: what this feature does and why.
+2. **Complexity assessment** — the complexity level and why.
+3. **Clarifications** — the Q&A from Phase 1 (summarized).
+4. **Alternatives considered** — the options from Phase 3 and the decision.
+5. **Deep design** (complex only) — links to domain-model.md, event-storming.md,
+   etc. with a brief summary of each.
+6. **Design overview** — requirements, acceptance criteria, surfaces, and terms
+   from the feature-design JSON, in prose.
+7. **Verification approach** — what the BDD scenarios cover and how.
+8. **Open questions** — anything unresolved that needs attention during
+   construction.
+
+This doc is the primary artifact a reviewer reads. The JSON contracts are the
+machine-validated truth; this doc is the human-readable story.
+
+## Phase 7: Present and Approve
+
+**Goal:** Present the complete design package and obtain approval.
+
+Show the user:
+1. The design doc path: `docs/features/[slug]/design/design.md`
+2. The design package revision and hash (from the last `verification put` response)
+3. A brief summary of what was designed
+
+Then ask for approval using the `clarify` tool with two choices:
+- **Approve now** — proceed to construction immediately
+- **Stand down for review** — pause here; the user will review the design doc
+  and resume later
+
+If the user approves now:
 
 ```sh
-hermoso validate feature-design <feature-design-path> <project-id> <feature-id> <run-id> <repository> --json
+hermoso approve design <project-id> <feature-id> <run-id> <repository> <revision> <package-hash> <actor> --json
 ```
 
-Validation does not persist the design.
+If the user stands down:
+- Do NOT call `approve design`
+- Summarize what was produced and where the artifacts live
+- Tell the user to resume by asking Hermes to "approve the design for
+  [feature-id]" when they are ready
+- The run stays at `awaiting_approval` — the user can take their time
 
-If the model is absent or stale, run `hermoso model build <project-id>
-<repository> --revision HEAD --json` before drafting. Query interface, testing,
-vocabulary, and invariant evidence by node ID. Preserve the exact snapshot
-reference in `base_model`; do not copy an unversioned prose view.
+## Resuming a Deferred Design
 
-## Adaptive Discovery
+When the user returns to approve a deferred design:
 
-For **small** work, inspect the relevant code and tests, then produce:
+1. Refresh state:
+   ```sh
+   hermoso status <repository> --json
+   hermoso context <project-id> <feature-id> <run-id> <repository> --json
+   ```
+2. Confirm the run is at `PhaseDesign/StatusAwaitingApproval`
+3. Read the design doc: `docs/features/[slug]/design/design.md`
+4. Confirm the user wants to approve (they may want changes — if so, cycle back
+   to Phase 5 with a new revision)
+5. Call `hermoso approve design` with the current revision and package hash
 
-- one clear objective;
-- observable acceptance criteria;
-- constraints and non-goals only when meaningful;
-- the minimum decisions needed to remove ambiguity;
-- usually one proposed work item.
+## Interaction Principles
 
-For **standard** work, also identify interfaces, data changes, compatibility,
-and independent implementation lanes.
+- **Never skip clarification.** Even for small features, at least confirm scope.
+- **Present alternatives before deciding.** The user should choose, not just
+  ratify.
+- **Adapt depth to complexity.** A small fix does not need DDD. A new domain
+  concept does.
+- **Write everything down.** Clarifications, alternatives, and decisions go into
+  `docs/features/[slug]/design/`. Future-you and future-reviewers need them.
+- **Defer gracefully.** If the user needs to think, let them. The state machine
+  supports `awaiting_approval` indefinitely.
+- **Never infer context.** Always pass explicit project-id, feature-id, run-id,
+  repository to every `hermoso` command.
 
-For **complex** work, identify architecture boundaries, rollout risks,
-cross-component dependencies, and evidence needed at integration. Complexity
-does not justify artificial card count.
+## Artifact Directory Structure
 
-## Optional Spike
+After a complete design process, `docs/features/[slug]/design/` contains:
 
-Use the existing `spike` skill only when a high-impact uncertainty needs an
-experiment. Reading source or documentation is not a spike. A spike must have:
-
-- a bounded question;
-- observable success/failure criteria;
-- a runtime budget;
-- a throwaway output or an explicit promotion decision.
-
-The spike is optional and should normally precede dependent implementation. Do
-not add a spike card as ceremony.
-
-## Feature Design Rules
-
-- Use the schema version returned by the live schema.
-- Copy the complete context object exactly; do not reconstruct it field by field.
-- Set `producer.skill` to `hermoso-design`.
-- Increment revision when changing a previously presented design.
-- Keep `unresolved_questions` empty before requesting approval. If questions
-  remain, ask or block; do not hide them in prose.
-- Give requirements and acceptance criteria stable semantic IDs; never use array
-  positions as downstream references.
-- Make acceptance criteria testable and outcome-focused, and link each one to
-  its requirement IDs.
-- Define business vocabulary IDs, preferred terms, definitions, and aliases.
-- Reference observed surfaces by exact model node ID. Declare not-yet-existing
-  API, CLI, UI, file, event, or library surfaces as planned overlays.
-- Record important tradeoffs as decisions with rationale.
-- Include research references only when their revision and SHA-256 hash are
-  known.
-
-## Propose a Right-Sized Work Graph
-
-Only after the verification author completes the package and the package is
-approved, sketch the likely construction:
-
-- **One item:** valid for a cohesive implementation and its tests.
-- **Several independent items:** no parent links; they may run in parallel.
-- **Dependency:** add a parent only when the child cannot start without the
-  parent's output.
-- **Fan-in/integration:** add only for multiple leaves that require a real
-  merge, shared validation, or synthesis.
-
-Every work item must cite visible `requirement_ids`,
-`acceptance_criterion_ids`, and `surface_ids`, and the graph as a whole must
-cover the approved visible design. Every item must also have a profile and an
-ordered, non-empty skill list.
-Resolve them from the selected profile rather than inventing names. Typical
-implementation ordering is:
-
-1. `kanban-worker` (injected by Hermes);
-2. `hermoso-construction`;
-3. `test-driven-development`;
-4. `systematic-debugging` when diagnosing failures.
-
-The proposal is review material, not yet a dispatched graph.
-
-## Approval Presentation
-
-Present:
-
-1. exact feature-design revision and content hash;
-2. objective and acceptance criteria;
-3. constraints, non-goals, and decisions;
-4. complexity assessment;
-5. proposed items and true dependencies;
-6. any optional spike;
-7. important interfaces, data, rollout, or compatibility effects.
-
-Invoke `hermoso-verification-author` after `design put`. Present its coverage,
-modalities, exclusions, publication paths, and the exact resulting package
-revision/hash. Ask for explicit approval or requested changes. Do not accept
-ambiguous assent. Any edited design, verification contract, artifact, or model
-snapshot needs a new package revision and approval.
-
-Persist and approve with the complete canonical context:
-
-```sh
-hermoso design put <project-id> <feature-id> <run-id> <repository> <feature-design-path> --json
-hermoso verification put <project-id> <feature-id> <run-id> <repository> <verification-contract-path> --json
-hermoso approve design <project-id> <feature-id> <run-id> <repository> <package-revision> <package-hash> <actor> [comment] --json
 ```
-
-Stop before construction until all three commands confirm the exact package.
-
-## Blocked Design
-
-If a decision, access requirement, or experiment prevents a valid design:
-
-1. explain the blocker precisely;
-2. if on Kanban, comment details and call `kanban_block`;
-3. optionally author a `phase-result` with phase `design`, status `blocked`, and
-   non-empty blockers;
-4. validate it with `hermoso validate phase-result <path> <project-id> <feature-id> <run-id> <repository> --json`;
-5. do not claim design completion.
+design/
+  design.md          — human-readable design summary (always present)
+  clarifications.md  — Phase 1 Q&A summary (standard and complex)
+  alternatives.md    — Phase 3 alternatives and decision (standard and complex)
+  domain-model.md    — Phase 4 DDD artifacts (complex only)
+  event-storming.md  — Phase 4 event sequences (complex only)
+  interface-sketch.md — Phase 4 interface drafts (complex only)
+  risk-analysis.md   — Phase 4 failure modes (complex only)
+```
 
 ## Common Pitfalls
 
-1. Starting with remembered structs instead of `hermoso schema`.
-2. Leaving unresolved questions while claiming a valid design.
-3. Adding a DAG because orchestration is available.
-4. Treating tests as a separate card when the same worker should implement
-   with TDD.
-5. Treating a spike as production implementation.
-6. Writing approval JSON directly into `.hermoso`.
-
-## Verification Checklist
-
-- [ ] Full context from `hermoso context` passed explicitly to every command.
-- [ ] Absolute workspace matched the canonical repository.
-- [ ] The knowledge spine was fresh and bounded model queries informed the design.
-- [ ] Feature design passed live validation with stable traceability IDs.
-- [ ] Complexity and graph size are proportional.
-- [ ] Every dependency is necessary.
-- [ ] Optional spike resolves a real uncertainty.
-- [ ] The hidden verification author completed cross-validation and sealed assets.
-- [ ] Exact package revision/hash was presented for one explicit approval.
-- [ ] Persistence and exact approval were confirmed by CLI state.
+1. Treating clarification as optional — it is not. Even a confident guess should
+   be confirmed.
+2. Presenting a single approach and calling it the "only option" — there are
+   always alternatives; surface them.
+3. Over-engineering small features — if the complexity is small, keep the
+   process lightweight.
+4. Under-engineering complex features — if the complexity is complex, do the
+   DDD work. Skipping it leads to rework.
+5. Forgetting to write the design doc — the JSON is for the machine; the doc is
+   for the human. Both are required.
+6. Calling `approve design` without the user's explicit consent — approval is
+   the user's decision, not the skill's.
