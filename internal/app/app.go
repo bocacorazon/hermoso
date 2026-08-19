@@ -398,6 +398,7 @@ func createFeatureArtifacts(repoRoot, featureID string) error {
 	base := filepath.Join(repoRoot, "docs", "features", slug)
 	dirs := []string{
 		base,
+		filepath.Join(base, "design"),
 		filepath.Join(base, "implementation"),
 		filepath.Join(base, "tasks"),
 	}
@@ -409,7 +410,7 @@ func createFeatureArtifacts(repoRoot, featureID string) error {
 	// Write a stub README if it doesn't exist.
 	readme := filepath.Join(base, "README.md")
 	if _, err := os.Stat(readme); os.IsNotExist(err) {
-		content := fmt.Sprintf("# %s\n\nFeature artifacts for %s.\n\n## Structure\n\n- `design/` — Feature design (authored during design phase)\n- `implementation/` — Delivery summary and test results\n- `tasks/` — Per-task notes, research, decisions\n", featureID, featureID)
+		content := fmt.Sprintf("# %s\n\nFeature artifacts for %s.\n\n## Structure\n\n- `design/` — Feature design artifacts (authored during design phase; begin with `hermoso design begin`)\n- `implementation/` — Delivery summary and test results\n- `tasks/` — Per-task notes, research, decisions\n", featureID, featureID)
 		if err := os.WriteFile(readme, []byte(content), 0o644); err != nil {
 			return fmt.Errorf("write feature README: %w", err)
 		}
@@ -471,21 +472,37 @@ func (a application) service(store state.Store) (workflow.Service, error) {
 }
 
 func (a application) runDesign(ctx context.Context, args []string) int {
-	if len(args) == 0 || args[0] != "put" {
-		return a.out.usageError("design requires: put <project-id> <feature-id> <run-id> <repository> <path>")
+	if len(args) == 0 || (args[0] != "put" && args[0] != "begin") {
+		return a.out.usageError("design requires: begin <project-id> <feature-id> <run-id> <repository> or put <project-id> <feature-id> <run-id> <repository> <path>")
 	}
+	action := args[0]
 	store, execution, rest, err := a.resolve(ctx, args[1:])
 	if err != nil {
 		return a.stateFailure(err)
 	}
+	service, err := a.service(store)
+	if err != nil {
+		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
+	}
+	if action == "begin" {
+		if len(rest) != 0 {
+			return a.out.usageError("design begin requires no extra arguments after full context")
+		}
+		run, changed, err := service.BeginDesign(ctx, execution)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorState, err.Error())
+		}
+		return a.out.success(
+			"design begin",
+			map[string]any{"run": run, "changed": changed},
+			fmt.Sprintf("began design phase for run %s (status=%s)\n", run.Context.RunID, run.Status),
+		)
+	}
+	// action == "put"
 	if len(rest) != 1 {
 		return a.out.usageError("design put requires exactly one contract path after full context")
 	}
 	data, err := a.deps.FS.ReadFile(rest[0])
-	if err != nil {
-		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
-	}
-	service, err := a.service(store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}

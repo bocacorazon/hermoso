@@ -527,6 +527,46 @@ func decodeMap(t *testing.T, input any, output any) {
 	}
 }
 
+func TestRunDesignBeginTransitionsToInProgress(t *testing.T) {
+	t.Parallel()
+	repo := testutil.NewRepository(t)
+	depsOut, depsErr := &bytes.Buffer{}, &bytes.Buffer{}
+	deps := testDependencies(depsOut, depsErr)
+	if code := Run(context.Background(), []string{"init", repo.Root, "--json"}, deps); code != ExitOK {
+		t.Fatalf("init: code=%d output=%s", code, depsOut.String())
+	}
+	depsOut.Reset()
+	if code := Run(context.Background(), []string{"start", "feature-begin", repo.Root, "--json"}, deps); code != ExitOK {
+		t.Fatalf("start: code=%d output=%s", code, depsOut.String())
+	}
+	var started response
+	if err := json.Unmarshal(depsOut.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	execution := started.Data["run"].(map[string]any)["context"].(map[string]any)
+	full := []string{
+		execution["project_id"].(string), execution["feature_id"].(string),
+		execution["run_id"].(string), repo.Root,
+	}
+	depsOut.Reset()
+	args := append([]string{"design", "begin"}, full...)
+	args = append(args, "--json")
+	if code := Run(context.Background(), args, deps); code != ExitOK {
+		t.Fatalf("design begin: code=%d output=%s", code, depsOut.String())
+	}
+	var got response
+	if err := json.Unmarshal(depsOut.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	run := got.Data["run"].(map[string]any)
+	if run["status"] != "in_progress" {
+		t.Fatalf("status = %v, want in_progress", run["status"])
+	}
+	if run["phase"] != "design" {
+		t.Fatalf("phase = %v, want design", run["phase"])
+	}
+}
+
 func TestCreateFeatureArtifacts(t *testing.T) {
 	t.Parallel()
 
@@ -536,6 +576,7 @@ func TestCreateFeatureArtifacts(t *testing.T) {
 	}
 	for _, path := range []string{
 		"docs/features/my-feature",
+		"docs/features/my-feature/design",
 		"docs/features/my-feature/implementation",
 		"docs/features/my-feature/tasks",
 		"docs/features/my-feature/README.md",
@@ -565,6 +606,7 @@ func TestRunStartCreatesFeatureArtifacts(t *testing.T) {
 	}
 	for _, path := range []string{
 		"docs/features/feature-artifacts-test",
+		"docs/features/feature-artifacts-test/design",
 		"docs/features/feature-artifacts-test/implementation",
 		"docs/features/feature-artifacts-test/tasks",
 		"docs/features/feature-artifacts-test/README.md",
