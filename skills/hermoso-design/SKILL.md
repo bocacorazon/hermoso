@@ -249,6 +249,8 @@ When the user returns to approve a deferred design:
 
 ## Interaction Principles
 
+- **Never edit `.hermoso` files directly.** All state transitions go through
+  the Hermoso CLI. Mutating Hermoso state outside the CLI corrupts the run.
 - **Never skip clarification.** Even for small features, at least confirm scope.
 - **Present alternatives before deciding.** The user should choose, not just
   ratify.
