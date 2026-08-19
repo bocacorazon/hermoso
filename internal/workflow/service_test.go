@@ -1393,3 +1393,52 @@ func TestReleaseMergesFeatureToDefaultBranch(t *testing.T) {
 		t.Fatalf("root branch=%s, want %s", current, execution.Repository.DefaultBranch)
 	}
 }
+
+func TestBeginDesignTransitionsPendingToInProgress(t *testing.T) {
+	t.Parallel()
+	_, service, execution, _ := setup(t, "feature-begin")
+	run, changed, err := service.BeginDesign(context.Background(), execution)
+	if err != nil {
+		t.Fatalf("begin design: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true")
+	}
+	if run.Phase != domain.PhaseDesign {
+		t.Fatalf("phase = %s, want %s", run.Phase, domain.PhaseDesign)
+	}
+	if run.Status != domain.StatusInProgress {
+		t.Fatalf("status = %s, want %s", run.Status, domain.StatusInProgress)
+	}
+
+	// Idempotent: calling again on in_progress is a no-op.
+	run2, changed2, err := service.BeginDesign(context.Background(), execution)
+	if err != nil {
+		t.Fatalf("idempotent begin: %v", err)
+	}
+	if changed2 {
+		t.Fatal("expected changed=false on second call")
+	}
+	if run2.Status != domain.StatusInProgress {
+		t.Fatalf("status = %s, want %s", run2.Status, domain.StatusInProgress)
+	}
+}
+
+func TestBeginDesignRejectsNonPending(t *testing.T) {
+	t.Parallel()
+	_, service, execution, _ := setup(t, "feature-begin-reject")
+	// Move to awaiting_approval by putting a design.
+	design := testDesign(t, execution, 1, "Begin reject")
+	run, _, err := service.PutDesign(context.Background(), execution, encode(t, design))
+	if err != nil {
+		t.Fatalf("put design: %v", err)
+	}
+	if run.Status != domain.StatusAwaitingApproval {
+		t.Fatalf("expected awaiting_approval, got %s", run.Status)
+	}
+	// Begin should fail — already past pending.
+	_, _, err = service.BeginDesign(context.Background(), execution)
+	if err == nil {
+		t.Fatal("expected error when begin called from awaiting_approval")
+	}
+}

@@ -103,6 +103,30 @@ func (s Service) PutDesign(ctx context.Context, execution domain.ContextRef, dat
 	return run, changed, err
 }
 
+func (s Service) BeginDesign(ctx context.Context, execution domain.ContextRef) (domain.Run, bool, error) {
+	changed := false
+	run, err := s.Store.UpdateRun(ctx, execution, func(run *domain.Run) error {
+		if run.Phase != domain.PhaseDesign {
+			return fmt.Errorf("design begin requires design phase, got %s", run.Phase)
+		}
+		if run.Status != domain.StatusPending {
+			if run.Status == domain.StatusInProgress {
+				return nil // already in progress — no-op
+			}
+			return fmt.Errorf("design begin requires pending status, got %s", run.Status)
+		}
+		if err := domain.ValidateTransition(run.Phase, run.Status, domain.PhaseDesign, domain.StatusInProgress); err != nil {
+			return err
+		}
+		run.Status = domain.StatusInProgress
+		run.Revision++
+		run.UpdatedAt = s.Now().UTC()
+		changed = true
+		return nil
+	})
+	return run, changed, err
+}
+
 func (s Service) PutVerificationContract(
 	ctx context.Context,
 	execution domain.ContextRef,
