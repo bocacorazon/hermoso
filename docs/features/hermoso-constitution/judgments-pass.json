@@ -1,0 +1,103 @@
+[
+  {
+    "judgment_id": "j-constitution-skill-creates",
+    "status": "pass",
+    "summary": "Skill exists with all required structure: create, amend, version, principle, hermoso prohibition, never infer, context, explicit",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The probe evidence confirms: skills/hermoso-constitution/SKILL.md exists (stdout: 'exists'), contains 'create' and 'amend' guidance, has 'version' and 'principle' language, includes .hermoso prohibition, never infer, hermoso context, and explicit context requirements. All 5 rubric criteria are satisfied.",
+      "criteria": [
+        "skills/hermoso-constitution/SKILL.md exists and has valid frontmatter with name starting hermoso-constitution",
+        "The skill describes interactive constitution creation with clarifying questions",
+        "The skill describes constitution amendment with version bump and sync impact report",
+        "The skill writes to docs/constitution.md only, never to .hermoso/",
+        "The skill contains .hermoso prohibition and never infer context language"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-constitution-skill-amends",
+    "status": "pass",
+    "summary": "Skill describes amendment with version bump and sync impact report",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The probe evidence confirms: has-amend, has-version-bump, has-sync-impact. The amendment process bumps the version and produces a sync impact report noting changed principles. All 3 rubric criteria are satisfied.",
+      "criteria": [
+        "The skill describes an amendment process that bumps the constitution version",
+        "The skill describes a sync impact report noting changed principles",
+        "The amendment process preserves existing principles unless explicitly removed"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-design-gate-blocks-no-constitution",
+    "status": "pass",
+    "summary": "Design skill has constitution check that blocks when no constitution exists",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The probe evidence confirms: has-constitution-check, has-block-no-constitution, has-run-constitution-first. The hermoso-design skill contains a Constitution Check section after Phase 0 that reads docs/constitution.md and blocks if absent, directing the user to run the hermoso-constitution skill. All 3 rubric criteria are satisfied.",
+      "criteria": [
+        "hermoso-design SKILL.md contains a constitution check step at the entry gate",
+        "The skill blocks and directs the user to run the hermoso-constitution skill if docs/constitution.md does not exist",
+        "The constitution check occurs before Phase 1 (Clarify)"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-design-gate-blocks-violation",
+    "status": "pass",
+    "summary": "Design skill checks against principles and blocks before design put on violations",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The probe evidence confirms: has-violation-check, has-block-put, has-principle-check. The design skill checks the feature design against each constitution principle and blocks before design put if a principle is violated without escape-hatch override. All 3 rubric criteria are satisfied.",
+      "criteria": [
+        "The design skill checks the feature design against each constitution principle",
+        "The skill blocks before design put if a principle is violated without escape-hatch override",
+        "The skill reports which principle is violated when blocking"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-design-gate-escape-hatch",
+    "status": "pass",
+    "summary": "Design skill describes escape-hatch override via decisions array with rationale and approval",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The probe evidence confirms: has-escape-hatch, has-override, has-decisions, has-rationale. The skill describes an escape-hatch override mechanism using the design's decisions array with rationale, requires explicit user approval, and records overrides in the design doc. All 4 rubric criteria are satisfied.",
+      "criteria": [
+        "The skill describes an escape-hatch override mechanism",
+        "Overrides are declared in the design's decisions array with rationale",
+        "The skill requires explicit user approval before proceeding with an override",
+        "Overrides are visible in the design doc"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-construction-gate-blocks-violation",
+    "status": "pass",
+    "summary": "Construction skill has constitution check that blocks dispatch on violations",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The probe evidence confirms: has-constitution-check, has-block-dispatch, has-escape-hatch-ref. The hermoso-construction skill contains a constitution check step before dispatch that reads docs/constitution.md and the approved design's decisions for overrides, and blocks dispatch if violations are detected without escape-hatch overrides. All 3 rubric criteria are satisfied.",
+      "criteria": [
+        "hermoso-construction SKILL.md contains a constitution check step before dispatch",
+        "The skill reads docs/constitution.md and the approved design's decisions for overrides",
+        "The skill blocks dispatch if violations are detected without escape-hatch overrides"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-general-capability",
+    "status": "pass",
+    "summary": "Skill works for any Hermoso-managed project, does not hardcode Hermoso repo path",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The probe evidence confirms: has-general, has-target-repo. The skill does not hardcode the Hermoso repo path and works with any Hermoso-initialized project. The constitution is created in the target project's docs/ directory. All 3 rubric criteria are satisfied.",
+      "criteria": [
+        "The skill does not hardcode the Hermoso repo path",
+        "The skill works with any Hermoso-initialized project",
+        "The constitution is created in the target project's docs/ directory"
+      ]
+    }
+  }
+]

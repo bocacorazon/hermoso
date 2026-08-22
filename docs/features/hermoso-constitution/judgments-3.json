@@ -1,0 +1,86 @@
+[
+  {
+    "judgment_id": "j-constitution-skill-creates",
+    "status": "fail",
+    "summary": "Verification worktree at pre-construction commit 1b259ca \u2014 j-constitution-skill-creates checks pre-construction skill content",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The verification worktree was created from commit 1b259ca which predates the construction work. The j-constitution-skill-creates judgment's evidence shows the pre-construction state. The construction changes are committed in the main repo at d4ebb57 but have not been integrated into the feature worktree used for verification.",
+      "criteria": [
+        "Construction changes must be present in the verification worktree"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-constitution-skill-amends",
+    "status": "fail",
+    "summary": "Verification worktree at pre-construction commit 1b259ca \u2014 j-constitution-skill-amends checks pre-construction skill content",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The verification worktree was created from commit 1b259ca which predates the construction work. The j-constitution-skill-amends judgment's evidence shows the pre-construction state. The construction changes are committed in the main repo at d4ebb57 but have not been integrated into the feature worktree used for verification.",
+      "criteria": [
+        "Construction changes must be present in the verification worktree"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-design-gate-blocks-no-constitution",
+    "status": "fail",
+    "summary": "Verification worktree at pre-construction commit 1b259ca \u2014 j-design-gate-blocks-no-constitution checks pre-construction skill content",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The verification worktree was created from commit 1b259ca which predates the construction work. The j-design-gate-blocks-no-constitution judgment's evidence shows the pre-construction state. The construction changes are committed in the main repo at d4ebb57 but have not been integrated into the feature worktree used for verification.",
+      "criteria": [
+        "Construction changes must be present in the verification worktree"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-design-gate-blocks-violation",
+    "status": "fail",
+    "summary": "Verification worktree at pre-construction commit 1b259ca \u2014 j-design-gate-blocks-violation checks pre-construction skill content",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The verification worktree was created from commit 1b259ca which predates the construction work. The j-design-gate-blocks-violation judgment's evidence shows the pre-construction state. The construction changes are committed in the main repo at d4ebb57 but have not been integrated into the feature worktree used for verification.",
+      "criteria": [
+        "Construction changes must be present in the verification worktree"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-design-gate-escape-hatch",
+    "status": "fail",
+    "summary": "Verification worktree at pre-construction commit 1b259ca \u2014 j-design-gate-escape-hatch checks pre-construction skill content",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The verification worktree was created from commit 1b259ca which predates the construction work. The j-design-gate-escape-hatch judgment's evidence shows the pre-construction state. The construction changes are committed in the main repo at d4ebb57 but have not been integrated into the feature worktree used for verification.",
+      "criteria": [
+        "Construction changes must be present in the verification worktree"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-construction-gate-blocks-violation",
+    "status": "fail",
+    "summary": "Verification worktree at pre-construction commit 1b259ca \u2014 j-construction-gate-blocks-violation checks pre-construction skill content",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The verification worktree was created from commit 1b259ca which predates the construction work. The j-construction-gate-blocks-violation judgment's evidence shows the pre-construction state. The construction changes are committed in the main repo at d4ebb57 but have not been integrated into the feature worktree used for verification.",
+      "criteria": [
+        "Construction changes must be present in the verification worktree"
+      ]
+    }
+  },
+  {
+    "judgment_id": "j-general-capability",
+    "status": "fail",
+    "summary": "Verification worktree at pre-construction commit 1b259ca \u2014 j-general-capability checks pre-construction skill content",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The verification worktree was created from commit 1b259ca which predates the construction work. The j-general-capability judgment's evidence shows the pre-construction state. The construction changes are committed in the main repo at d4ebb57 but have not been integrated into the feature worktree used for verification.",
+      "criteria": [
+        "Construction changes must be present in the verification worktree"
+      ]
+    }
+  }
+]

@@ -15,7 +15,7 @@
     "skill": "hermoso-verification-author",
     "runtime": "agent"
   },
-  "revision": 4,
+  "revision": 6,
   "feature_design": {
     "context": {
       "schema_version": "hermoso-context/v1",
