@@ -15,7 +15,7 @@
     "skill": "hermoso-verification-author",
     "runtime": "agent"
   },
-  "revision": 3,
+  "revision": 4,
   "feature_design": {
     "context": {
       "schema_version": "hermoso-context/v1",
@@ -357,7 +357,7 @@
         "command": [
           "python3",
           "-c",
-          "import os,runpy;runpy.run_path(os.path.join(os.getcwd(),'docs/features/hermoso-constitution/design/probes/check_profile.py'),run_name='__main__')"
+          "import os,runpy;runpy.run_path(os.path.join(os.environ['HERMOSO_VERIFICATION_ASSETS'],'probes/check_profile.py'),run_name='__main__')"
         ],
         "timeout_seconds": 10
       },

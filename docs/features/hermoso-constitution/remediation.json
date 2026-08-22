@@ -1,0 +1,73 @@
+{
+  "needs": [
+    {
+      "expected": "Verification should run against the post-construction commit containing all skill changes",
+      "actual": "Verification ran against the pre-construction HEAD \u2014 construction work was not committed before verification run",
+      "requirement_ids": [
+        "req-skill-invariants"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-skill-tests-pass"
+      ],
+      "surface_ids": [
+        "surface-constitution-skill",
+        "surface-design-gate",
+        "surface-construction-gate"
+      ]
+    }
+  ],
+  "graph": {
+    "schema_version": "2",
+    "context": {
+      "schema_version": "hermoso-context/v1",
+      "project_id": "project-d5521aba6f502cdce404de74",
+      "feature_id": "hermoso-constitution",
+      "run_id": "run-cd8f2cc2c7caa8afecdd9c4e",
+      "repository": {
+        "repository": "/home/marcos/Projects/hermoso",
+        "remote_url": "https://github.com/bocacorazon/hermoso.git",
+        "default_branch": "main"
+      }
+    },
+    "producer": {
+      "skill": "hermoso-verification",
+      "runtime": "agent"
+    },
+    "revision": 1,
+    "items": [
+      {
+        "id": "remediation-recommit",
+        "title": "No-op remediation \u2014 construction work already committed",
+        "prompt": "The construction work was already committed (commit 05f9f41). This is a no-op remediation \u2014 verify the commit contains all expected changes (hermoso-constitution skill, design gate, construction gate, skills_test.go, profiles/default.yaml) and mark complete.",
+        "acceptance_criteria": [
+          "All skill files present at the current HEAD commit"
+        ],
+        "requirement_ids": [
+          "req-skill-invariants"
+        ],
+        "acceptance_criterion_ids": [
+          "ac-skill-tests-pass"
+        ],
+        "surface_ids": [
+          "surface-constitution-skill",
+          "surface-design-gate",
+          "surface-construction-gate",
+          "surface-skill-test",
+          "surface-profile-binding"
+        ],
+        "worker": {
+          "profile": "default",
+          "skills": [
+            {
+              "name": "test-driven-development"
+            }
+          ]
+        },
+        "validation_commands": [
+          "go test ./skills/ -v -run TestSkill"
+        ],
+        "runtime_budget_seconds": 60
+      }
+    ]
+  }
+}

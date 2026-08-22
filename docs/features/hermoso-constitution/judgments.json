@@ -1,0 +1,72 @@
+[
+  {
+    "judgment_id": "j-constitution-skill-creates",
+    "status": "fail",
+    "summary": "Verification ran against pre-construction commit — skill file not present in worktree",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The evidence stdout shows 'missing' and 'no-create' — the verification worktree was created from the candidate commit before construction work was committed. The skill file exists in the repository now but was not present at the candidate commit used for this verification attempt.",
+      "criteria": ["skills/hermoso-constitution/SKILL.md exists and has valid frontmatter with name starting hermoso-constitution"]
+    }
+  },
+  {
+    "judgment_id": "j-constitution-skill-amends",
+    "status": "fail",
+    "summary": "Verification ran against pre-construction commit — skill file not present in worktree",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The evidence stdout shows 'no-amend' — the skill file was not present in the verification worktree. Same root cause as j-constitution-skill-creates.",
+      "criteria": ["The skill describes an amendment process that bumps the constitution version"]
+    }
+  },
+  {
+    "judgment_id": "j-design-gate-blocks-no-constitution",
+    "status": "fail",
+    "summary": "Verification ran against pre-construction commit — constitution check not yet added to design skill",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The evidence stdout shows 'no-constitution-check' — the design skill in the verification worktree was the pre-construction version without the constitution gate.",
+      "criteria": ["hermoso-design SKILL.md contains a constitution check step at the entry gate"]
+    }
+  },
+  {
+    "judgment_id": "j-design-gate-blocks-violation",
+    "status": "fail",
+    "summary": "Verification ran against pre-construction commit — violation check not yet added",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The evidence stdout shows 'no-violation-check' and 'no-block-put' — the design skill was the pre-construction version.",
+      "criteria": ["The design skill checks the feature design against each constitution principle"]
+    }
+  },
+  {
+    "judgment_id": "j-design-gate-escape-hatch",
+    "status": "fail",
+    "summary": "Verification ran against pre-construction commit — escape hatch not yet added",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The evidence stdout shows 'no-escape-hatch' and 'no-override' — the design skill was the pre-construction version.",
+      "criteria": ["The skill describes an escape-hatch override mechanism"]
+    }
+  },
+  {
+    "judgment_id": "j-construction-gate-blocks-violation",
+    "status": "fail",
+    "summary": "Verification ran against pre-construction commit — constitution check not yet added to construction skill",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The evidence stdout shows 'no-constitution-check' — the construction skill in the verification worktree was the pre-construction version without the constitution gate.",
+      "criteria": ["hermoso-construction SKILL.md contains a constitution check step before dispatch"]
+    }
+  },
+  {
+    "judgment_id": "j-general-capability",
+    "status": "fail",
+    "summary": "Verification ran against pre-construction commit — skill file not present",
+    "qualitative": {
+      "judge": "rubric",
+      "reasoning": "The evidence stdout shows 'no-general' and 'no-target-repo' — the skill file was not present in the verification worktree.",
+      "criteria": ["The skill does not hardcode the Hermoso repo path"]
+    }
+  }
+]
