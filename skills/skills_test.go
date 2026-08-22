@@ -10,7 +10,7 @@ import (
 )
 
 var skillNames = []string{
-	"hermoso", "hermoso-design", "hermoso-verification-author",
+	"hermoso", "hermoso-constitution", "hermoso-design", "hermoso-verification-author",
 	"hermoso-construction", "hermoso-verification",
 }
 

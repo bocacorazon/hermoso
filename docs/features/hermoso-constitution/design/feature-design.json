@@ -1,0 +1,265 @@
+{
+  "schema_version": "2",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-d5521aba6f502cdce404de74",
+    "feature_id": "hermoso-constitution",
+    "run_id": "run-cd8f2cc2c7caa8afecdd9c4e",
+    "repository": {
+      "repository": "/home/marcos/Projects/hermoso",
+      "remote_url": "https://github.com/bocacorazon/hermoso.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-design",
+    "runtime": "agent"
+  },
+  "revision": 1,
+  "feature": {
+    "id": "hermoso-constitution",
+    "title": "Hermoso Constitution \u2014 Project Governance with Hard-Gate Enforcement",
+    "objective": "Provide every Hermoso-managed project with a versioned constitution that formalizes its governing principles, and enforce those principles as hard gates at design and construction time, with a formal escape-hatch override mechanism.",
+    "target_repository": {
+      "repository": "/home/marcos/Projects/hermoso",
+      "remote_url": "https://github.com/bocacorazon/hermoso.git",
+      "default_branch": "main"
+    }
+  },
+  "base_model": {
+    "schema_version": "hermoso-repository-model/v1",
+    "snapshot_id": "model-61c6d3ee09fe1cbfd4926761c7fb9679",
+    "content_hash": "sha256:61c6d3ee09fe1cbfd4926761c7fb967985291833f554ac3e4c3ade1731946fa3",
+    "source_revision": "1b259ca0be90b6b5cf402f0f3c5c79a08cf914d9",
+    "vocabulary_version": "v1"
+  },
+  "complexity": "standard",
+  "requirements": [
+    {
+      "id": "req-constitution-skill",
+      "title": "Constitution creation and amendment skill",
+      "statement": "A new hermoso-constitution skill shall interactively guide a user through creating and amending a project constitution at docs/constitution.md, producing a versioned markdown document with named principles, rationale, and governance metadata.",
+      "kind": "functional",
+      "priority": "must",
+      "rationale": "Without a dedicated skill, constitution creation is ad-hoc and inconsistent across projects. The skill ensures every project gets a well-structured constitution."
+    },
+    {
+      "id": "req-constitution-storage",
+      "title": "Constitution stored as committed markdown",
+      "statement": "The constitution shall be stored as a committed markdown file at docs/constitution.md in the target repository, readable by all developers and Hermoso skills without Go CLI support.",
+      "kind": "structural",
+      "priority": "must",
+      "rationale": "Committed markdown is visible, diffable, and reviewable. No Go CLI changes are needed for v1 \u2014 the skill reads and trusts the file directly."
+    },
+    {
+      "id": "req-constitution-post-init",
+      "title": "Post-init constitution creation flow",
+      "statement": "After hermoso init, the user shall run the hermoso-constitution skill to create the starter constitution. The design skill shall block with a directive to run the constitution skill first if docs/constitution.md does not exist when a feature design begins.",
+      "kind": "functional",
+      "priority": "must",
+      "rationale": "The constitution is required for feature work. By making the skill create it post-init, we avoid Go changes to the init command while still enforcing the requirement at design time."
+    },
+    {
+      "id": "req-design-gate",
+      "title": "Design-phase constitution hard gate",
+      "statement": "The hermoso-design skill shall read docs/constitution.md at its entry gate and check the proposed feature design against each constitution principle. If a principle is violated and no escape-hatch override is declared, the skill shall block before design put.",
+      "kind": "functional",
+      "priority": "must",
+      "rationale": "Constitution enforcement at design time prevents principled violations from reaching construction, where they are more expensive to fix."
+    },
+    {
+      "id": "req-construction-gate",
+      "title": "Construction-phase constitution hard gate",
+      "statement": "The hermoso-construction skill shall read docs/constitution.md before dispatch and verify the work graph does not violate constitution principles. If a violation is detected and no escape-hatch override exists in the approved design, the skill shall block dispatch.",
+      "kind": "functional",
+      "priority": "must",
+      "rationale": "Construction is the last gate before workers write code. Re-checking the constitution here catches violations that might have been introduced during work graph authoring."
+    },
+    {
+      "id": "req-escape-hatch",
+      "title": "Formal escape-hatch override",
+      "statement": "The user shall be able to explicitly override a constitution principle by declaring the override with rationale in the design's decisions array. The skill shall record the override, require explicit user approval, and proceed despite the violation. Overrides shall be visible in the design doc and flagged during construction.",
+      "kind": "functional",
+      "priority": "must",
+      "rationale": "Constitutions that cannot be overridden create deadlocks when principles genuinely conflict or when a principle is outdated. The escape hatch must be formal (recorded, approved, visible) \u2014 not silent."
+    },
+    {
+      "id": "req-general-capability",
+      "title": "General capability for any Hermoso-managed project",
+      "statement": "The constitution skill and enforcement gates shall work for any Hermoso-managed project, not just the Hermoso repo itself. The Hermoso repo shall be the first dogfood user.",
+      "kind": "functional",
+      "priority": "should",
+      "rationale": "Constitution governance is a general pattern. Designing it as a general capability from the start avoids retrofitting later."
+    },
+    {
+      "id": "req-skill-invariants",
+      "title": "Skill test invariants preserved",
+      "statement": "The new hermoso-constitution skill and modifications to existing skills shall pass all 5 invariants enforced by skills/skills_test.go: no direct state mutation, explicit context checks, command labels match CLI, frontmatter and cross-references valid, and default profile bindings list the new skill.",
+      "kind": "non_functional",
+      "priority": "must",
+      "rationale": "The skill test suite is the guardrail for skill quality. Adding a new skill must not break existing invariants."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "ac-constitution-skill-creates",
+      "statement": "Given a Hermoso-initialized project with no docs/constitution.md, when the user runs the hermoso-constitution skill, then docs/constitution.md is created with at least one named principle, a version field, and a governance section.",
+      "requirement_ids": [
+        "req-constitution-skill",
+        "req-constitution-storage"
+      ]
+    },
+    {
+      "id": "ac-constitution-skill-amends",
+      "statement": "Given an existing docs/constitution.md, when the user runs the hermoso-constitution skill to amend it, then the constitution is updated with a version bump and a sync impact report noting changed principles.",
+      "requirement_ids": [
+        "req-constitution-skill"
+      ]
+    },
+    {
+      "id": "ac-design-blocks-no-constitution",
+      "statement": "Given a Hermoso project with no docs/constitution.md, when the hermoso-design skill begins, then it blocks and directs the user to run the hermoso-constitution skill first.",
+      "requirement_ids": [
+        "req-constitution-post-init",
+        "req-design-gate"
+      ]
+    },
+    {
+      "id": "ac-design-blocks-violation",
+      "statement": "Given a project with a constitution, when the hermoso-design skill detects a feature design that violates a constitution principle and no escape-hatch override is declared, then it blocks before design put and reports which principle is violated.",
+      "requirement_ids": [
+        "req-design-gate"
+      ]
+    },
+    {
+      "id": "ac-design-allows-override",
+      "statement": "Given a project with a constitution, when the hermoso-design skill detects a violation but the design's decisions array contains an override entry with rationale for that principle, then the skill proceeds after explicit user approval of the override.",
+      "requirement_ids": [
+        "req-escape-hatch",
+        "req-design-gate"
+      ]
+    },
+    {
+      "id": "ac-construction-blocks-violation",
+      "statement": "Given an approved design, when the hermoso-construction skill reads the constitution before dispatch and detects a work graph that violates a constitution principle not covered by an escape-hatch override in the design, then it blocks dispatch.",
+      "requirement_ids": [
+        "req-construction-gate"
+      ]
+    },
+    {
+      "id": "ac-skill-tests-pass",
+      "statement": "After adding hermoso-constitution to the skillNames array and profile default.yaml, all 5 tests in skills/skills_test.go pass.",
+      "requirement_ids": [
+        "req-skill-invariants"
+      ]
+    },
+    {
+      "id": "ac-general-capability",
+      "statement": "Given any Hermoso-initialized project (not just the Hermoso repo), the constitution skill creates a constitution and the design/construction gates enforce it.",
+      "requirement_ids": [
+        "req-general-capability"
+      ]
+    }
+  ],
+  "interaction_surfaces": [
+    {
+      "id": "surface-constitution-skill",
+      "title": "hermoso-constitution skill SKILL.md",
+      "kind": "file",
+      "source": "planned",
+      "description": "New skill file at skills/hermoso-constitution/SKILL.md. Provides interactive constitution creation and amendment. Reads no .hermoso state. Writes docs/constitution.md only."
+    },
+    {
+      "id": "surface-design-gate",
+      "title": "hermoso-design constitution gate section",
+      "kind": "file",
+      "source": "planned",
+      "description": "Modified skills/hermoso-design/SKILL.md. Adds a constitution check step at the entry gate (after Phase 0, before Phase 1). Reads docs/constitution.md. Blocks if absent or if principles are violated without escape-hatch override."
+    },
+    {
+      "id": "surface-construction-gate",
+      "title": "hermoso-construction constitution gate section",
+      "kind": "file",
+      "source": "planned",
+      "description": "Modified skills/hermoso-construction/SKILL.md. Adds a constitution check step before dispatch. Reads docs/constitution.md and the approved design's decisions for overrides. Blocks if violations detected."
+    },
+    {
+      "id": "surface-profile-binding",
+      "title": "Profile default.yaml binding",
+      "kind": "file",
+      "source": "planned",
+      "description": "Modified profiles/default.yaml. Adds hermoso-constitution to the controller phase skills list."
+    },
+    {
+      "id": "surface-skill-test",
+      "title": "skills_test.go skillNames array",
+      "kind": "file",
+      "source": "planned",
+      "description": "Modified skills/skills_test.go. Adds hermoso-constitution to the skillNames slice so test invariants apply to the new skill."
+    },
+    {
+      "id": "surface-constitution-doc",
+      "title": "docs/constitution.md (runtime artifact)",
+      "kind": "file",
+      "source": "planned",
+      "description": "The constitution document itself, created by the skill at runtime in each target project. Not a source artifact \u2014 it is generated per-project. Contains named principles, rationale, version, and governance section."
+    }
+  ],
+  "constraints": [
+    "No new Go CLI commands \u2014 the constitution is entirely skill-managed",
+    "No changes to .hermoso state files \u2014 the constitution lives at docs/constitution.md as committed markdown",
+    "The hermoso-constitution skill must pass all 5 skill test invariants",
+    "The constitution skill must never edit .hermoso files directly",
+    "Enforcement is skill-level judgment, not Go-level deterministic checking"
+  ],
+  "decisions": [
+    {
+      "decision": "Constitution stored as docs/constitution.md (committed markdown), not in .hermoso/",
+      "rationale": "Committed markdown is visible, diffable, and reviewable. No Go CLI changes needed. The skill reads and trusts the file directly. This follows the speckit pattern but uses a docs/ location instead of .specify/memory/."
+    },
+    {
+      "decision": "No Go CLI involvement for v1 \u2014 skill reads docs/constitution.md directly",
+      "rationale": "Does-this-violate-a-principle is a judgment question (skill), not a deterministic check (Go). Go's role is deterministic identity, and we don't need that for v1. Adding a hash command is a future enhancement if freshness verification becomes important."
+    },
+    {
+      "decision": "Constitution is required for design \u2014 post-init skill creates it",
+      "rationale": "Making the constitution required ensures every project has governance. Having the skill (not Go init) create it avoids Go changes while still enforcing the requirement at design time."
+    },
+    {
+      "decision": "Escape hatch via design decisions array, not a separate override field",
+      "rationale": "The decisions array already exists in the feature-design schema. Using it for overrides avoids schema changes. The override is a decision with rationale that names the principle being overridden."
+    },
+    {
+      "decision": "hermoso-constitution is a controller-phase skill, not bound to a specific lifecycle phase",
+      "rationale": "The constitution is project-level governance, not phase-specific. It belongs in the controller phase alongside the main hermoso skill. Design and construction skills read it but don't own it."
+    }
+  ],
+  "non_goals": [
+    "Go CLI commands for constitution CRUD (init/put/show/check) \u2014 future enhancement",
+    "Hash-based freshness verification of the constitution \u2014 future enhancement",
+    "Constitution schema validation in Go \u2014 the skill validates structure",
+    "Automatic principle derivation from codebase analysis \u2014 the user authors principles",
+    "Cross-project constitution inheritance or sharing"
+  ],
+  "unresolved_questions": [],
+  "architecture_boundaries": [],
+  "business_vocabulary": [
+    {
+      "id": "term-constitution",
+      "term": "constitution",
+      "definition": "A versioned markdown document at docs/constitution.md that declares a project's governing principles, their rationale, and amendment procedures. Created and maintained by the hermoso-constitution skill."
+    },
+    {
+      "id": "term-principle",
+      "term": "principle",
+      "definition": "A named, declarative rule in the constitution that feature designs and construction work must not violate. Each principle has a name, a paragraph describing the rule, and a rationale."
+    },
+    {
+      "id": "term-escape-hatch",
+      "term": "escape hatch",
+      "definition": "A formal override of a constitution principle, declared in the design's decisions array with rationale and explicit user approval. The override is recorded and visible but allows the work to proceed despite the violation."
+    }
+  ],
+  "research_references": [],
+  "rollout_and_compatibility": []
+}

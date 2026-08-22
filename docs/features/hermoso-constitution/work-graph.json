@@ -1,0 +1,139 @@
+{
+  "schema_version": "2",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-d5521aba6f502cdce404de74",
+    "feature_id": "hermoso-constitution",
+    "run_id": "run-cd8f2cc2c7caa8afecdd9c4e",
+    "repository": {
+      "repository": "/home/marcos/Projects/hermoso",
+      "remote_url": "https://github.com/bocacorazon/hermoso.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-construction",
+    "runtime": "agent"
+  },
+  "revision": 1,
+  "items": [
+    {
+      "id": "work-constitution-skill",
+      "title": "Write the hermoso-constitution skill",
+      "prompt": "Create a new Hermes skill at skills/hermoso-constitution/SKILL.md. This skill interactively creates and amends a project constitution at docs/constitution.md for any Hermoso-managed project. The skill must: (1) guide the user through interactive constitution creation with clarifying questions about project principles, (2) write the constitution to docs/constitution.md in the target project, (3) support amendment with version bump and a sync impact report noting changed principles, (4) produce a constitution with named principles (each with name, paragraph, rationale), a version field, and a governance section with amendment procedure, (5) work for any Hermoso-initialized project, not just Hermoso itself. The skill frontmatter must have name: hermoso-constitution, a description starting with 'Use when', and related_skills listing hermoso. The skill body MUST contain: '.hermoso' with 'never edit' (prohibition on direct state mutation), 'never infer' (prohibition on inferred identity), 'hermoso context' (reference to context command), and 'explicit' (require explicit context). Do NOT include any shell commands that sed/tee/cp .hermoso files. The skill writes ONLY to docs/constitution.md — never to .hermoso/. Work ONLY in your assigned worktree.",
+      "acceptance_criteria": [
+        "skills/hermoso-constitution/SKILL.md exists with valid frontmatter (name: hermoso-constitution, description starting 'Use when', related_skills resolves)",
+        "Skill describes interactive constitution creation with clarifying questions",
+        "Skill describes constitution amendment with version bump and sync impact report",
+        "Skill writes to docs/constitution.md only, never to .hermoso/",
+        "Skill contains .hermoso prohibition, never infer, hermoso context, and explicit language"
+      ],
+      "requirement_ids": ["req-constitution-skill", "req-constitution-storage", "req-general-capability"],
+      "acceptance_criterion_ids": ["ac-constitution-skill-creates", "ac-constitution-skill-amends", "ac-general-capability"],
+      "surface_ids": ["surface-constitution-skill", "surface-constitution-doc"],
+      "expected_changed_surfaces": ["surface-constitution-skill", "surface-constitution-doc"],
+      "validation_commands": ["test -f skills/hermoso-constitution/SKILL.md"],
+      "runtime_budget_seconds": 300,
+      "worker": {
+        "profile": "default",
+        "skills": [
+          {"name": "hermes-agent-skill-authoring"}
+        ]
+      }
+    },
+    {
+      "id": "work-design-gate",
+      "title": "Add constitution gate to hermoso-design skill",
+      "prompt": "Modify skills/hermoso-design/SKILL.md to add a constitution gate. After Phase 0 (Classify and Announce) and before Phase 1 (Clarify), insert a new section called 'Constitution Check'. This section must: (1) Read docs/constitution.md in the target project. (2) If docs/constitution.md does not exist, BLOCK and direct the user to run the hermoso-constitution skill first — do NOT proceed to clarification or contract authoring. (3) If the constitution exists, read each principle and check the proposed feature design against them. (4) If a principle is violated and no escape-hatch override is declared in the design's decisions array, BLOCK before 'hermoso design put' and report which principle is violated. (5) Describe the escape hatch: the user declares an override in the design's decisions array with rationale naming the overridden principle, the skill records it, requires explicit user approval, and proceeds. (6) Overrides are visible in the design doc and flagged during construction. Preserve ALL existing content — only ADD the constitution check section. Do NOT remove or rewrite existing phases, the HARD GATE, the ratchet, or interaction principles. Work ONLY in your assigned worktree.",
+      "acceptance_criteria": [
+        "hermoso-design SKILL.md contains a constitution check step at the entry gate",
+        "The skill blocks and directs the user to run the hermoso-constitution skill if docs/constitution.md does not exist",
+        "The constitution check occurs before Phase 1 (Clarify)",
+        "The design skill checks the feature design against each constitution principle",
+        "The skill blocks before design put if a principle is violated without escape-hatch override",
+        "The skill describes the escape-hatch override mechanism using the design's decisions array"
+      ],
+      "requirement_ids": ["req-design-gate", "req-escape-hatch", "req-constitution-post-init"],
+      "acceptance_criterion_ids": ["ac-design-blocks-no-constitution", "ac-design-blocks-violation", "ac-design-allows-override"],
+      "surface_ids": ["surface-design-gate"],
+      "expected_changed_surfaces": ["surface-design-gate"],
+      "validation_commands": ["grep -q constitution skills/hermoso-design/SKILL.md"],
+      "runtime_budget_seconds": 300,
+      "worker": {
+        "profile": "default",
+        "skills": [
+          {"name": "hermes-agent-skill-authoring"}
+        ]
+      }
+    },
+    {
+      "id": "work-construction-gate",
+      "title": "Add constitution gate to hermoso-construction skill",
+      "prompt": "Modify skills/hermoso-construction/SKILL.md to add a constitution gate before dispatch. In the 'Entry Gate' section, after the existing context refresh and approval verification, add a 'Constitution Check' step that: (1) Reads docs/constitution.md in the target project. (2) If docs/constitution.md does not exist, block and report that the constitution is missing. (3) If the constitution exists, read each principle and check the work graph against them. (4) Check the approved design's decisions array for escape-hatch overrides — if a violation is covered by an override, proceed. (5) If a violation is detected and no escape-hatch override exists in the approved design, block dispatch. (6) The block reason should name the specific principle violated. Preserve ALL existing content — only ADD the constitution check step. Do NOT remove or rewrite existing sections. Work ONLY in your assigned worktree.",
+      "acceptance_criteria": [
+        "hermoso-construction SKILL.md contains a constitution check step before dispatch",
+        "The skill reads docs/constitution.md and the approved design's decisions for overrides",
+        "The skill blocks dispatch if violations are detected without escape-hatch overrides"
+      ],
+      "requirement_ids": ["req-construction-gate"],
+      "acceptance_criterion_ids": ["ac-construction-blocks-violation"],
+      "surface_ids": ["surface-construction-gate"],
+      "expected_changed_surfaces": ["surface-construction-gate"],
+      "validation_commands": ["grep -q constitution skills/hermoso-construction/SKILL.md"],
+      "runtime_budget_seconds": 300,
+      "worker": {
+        "profile": "default",
+        "skills": [
+          {"name": "hermes-agent-skill-authoring"}
+        ]
+      }
+    },
+    {
+      "id": "work-tests-and-profile",
+      "title": "Update skills_test.go and profiles/default.yaml for the new skill",
+      "prompt": "Make two changes to register the new hermoso-constitution skill: (1) In skills/skills_test.go, add 'hermoso-constitution' to the skillNames slice (the var at the top of the file). Keep alphabetical order. (2) In profiles/default.yaml, add 'hermoso-constitution' to the controller phase skills array (currently [\"hermoso\", \"kanban-orchestrator\"]). The result should be [\"hermoso\", \"hermoso-constitution\", \"kanban-orchestrator\"]. Do NOT modify any other test logic or profile phases. After making changes, run 'go test ./skills/ -v -run TestSkill' to verify all 5 tests pass. If TestDefaultProfileBindings fails, ensure the profile lists the skill name as a quoted string. If TestSkillFrontmatterAndCrossReferences fails, ensure hermoso-constitution/SKILL.md exists with valid frontmatter (this depends on work-constitution-skill being done first, but make the code changes regardless). Work ONLY in your assigned worktree.",
+      "acceptance_criteria": [
+        "skills_test.go skillNames array includes 'hermoso-constitution'",
+        "profiles/default.yaml controller phase skills include 'hermoso-constitution'",
+        "go test ./skills/ -v -run TestSkill passes all 5 tests"
+      ],
+      "requirement_ids": ["req-skill-invariants"],
+      "acceptance_criterion_ids": ["ac-skill-tests-pass"],
+      "surface_ids": ["surface-skill-test", "surface-profile-binding"],
+      "expected_changed_surfaces": ["surface-skill-test", "surface-profile-binding"],
+      "validation_commands": ["go test ./skills/ -run TestSkill"],
+      "runtime_budget_seconds": 300,
+      "worker": {
+        "profile": "default",
+        "skills": [
+          {"name": "test-driven-development"}
+        ]
+      }
+    },
+    {
+      "id": "work-integration",
+      "title": "Integration: verify all skill tests pass and probes run",
+      "prompt": "Integration item: after all work items are complete, merge their branches into the feature worktree and run the full verification. Steps: (1) Merge branches from work-constitution-skill, work-design-gate, work-construction-gate, and work-tests-and-profile. (2) Run 'go test ./skills/ -v -run TestSkill' and verify all 5 tests pass. (3) Run each probe script in docs/features/hermoso-constitution/design/probes/ and verify they pass (the probes check for required content in the skill files). (4) If any test fails, diagnose and fix the root cause. (5) Commit the merged result. Do NOT push. Work ONLY in your assigned worktree.",
+      "acceptance_criteria": [
+        "All 5 skill tests pass after merging all work items",
+        "All probe scripts pass",
+        "No merge conflicts remain"
+      ],
+      "requirement_ids": ["req-skill-invariants"],
+      "acceptance_criterion_ids": ["ac-skill-tests-pass"],
+      "surface_ids": ["surface-skill-test", "surface-profile-binding", "surface-constitution-skill", "surface-design-gate", "surface-construction-gate"],
+      "expected_changed_surfaces": [],
+      "validation_commands": ["go test ./skills/ -v -run TestSkill"],
+      "runtime_budget_seconds": 600,
+      "parents": ["work-constitution-skill", "work-design-gate", "work-construction-gate", "work-tests-and-profile"],
+      "worker": {
+        "profile": "default",
+        "skills": [
+          {"name": "hermoso-construction"},
+          {"name": "test-driven-development"},
+          {"name": "systematic-debugging"}
+        ]
+      }
+    }
+  ]
+}

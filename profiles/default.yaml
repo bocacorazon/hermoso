@@ -5,7 +5,7 @@
   "phases": {
     "controller": {
       "profile": "default",
-      "skills": ["hermoso", "kanban-orchestrator"]
+      "skills": ["hermoso", "hermoso-constitution", "kanban-orchestrator"]
     },
     "design": {
       "profile": "default",

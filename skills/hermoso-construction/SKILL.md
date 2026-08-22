@@ -1,7 +1,7 @@
 ---
 name: hermoso-construction
 description: "Use when an exact Hermoso design is approved. Author a work-graph, create and bind Kanban work safely, and drive worker and integration cards to truthful blocked or completed outcomes."
-version: 1.0.0
+version: 1.1.1
 author: Hermoso
 license: MIT
 platforms: [linux, macos, windows]
@@ -36,6 +36,27 @@ rejects mismatches. Proceed only when status proves that the complete
 design-package revision/hash is approved. The package includes a visible design
 and hidden verification contract/assets. Stop and block rather than dispatching
 from conversational memory.
+
+### Constitution Check
+
+Before authoring the work graph or dispatching any work, read the project
+constitution:
+
+1. Read `docs/constitution.md` in the target project.
+2. If `docs/constitution.md` does not exist, block and report that the
+   constitution is missing — the design phase should have enforced this, but
+   re-check to be safe.
+3. If the constitution exists, read each principle and check the work graph
+   against them. Each work item must not violate any constitution principle.
+4. Check the approved design's `decisions` array for escape-hatch overrides.
+   If a violation is covered by an override entry (the decision names the
+   principle being overridden and the rationale explains why), proceed.
+5. If a violation is detected and no escape-hatch override exists in the
+   approved design, block dispatch. The block reason should name the
+   specific principle violated and the work item that violates it.
+
+This is the last gate before workers write code. Constitution violations
+caught here prevent costly rework.
 
 ## Construction Plan
 
@@ -87,6 +108,10 @@ Rules:
 - validation commands are concrete and safe to run in the worktree;
 - runtime budgets are proportional;
 - add an integration item only when multiple graph leaves need fan-in.
+
+Item prompts must warn workers explicitly to work ONLY inside their assigned
+worktree and never write into the main repository checkout — local-model
+workers ignore this often enough that it must be stated in every card.
 
 Use `test-driven-development` for production changes and
 `systematic-debugging` when a test, merge, build, or integration check fails.
@@ -158,6 +183,42 @@ Each worker must:
 Do not edit `.hermoso` files from a worker worktree. Do not use
 `delegate_task` instead of Kanban for durable graph work.
 
+## Verify and Salvage Worker Output
+
+A worker's self-reported status is a CLAIM, not evidence. Observed failure
+modes (local-model workers, seen repeatedly across features):
+
+1. **Silent death:** if the profile's model endpoint is down, the worker dies
+   in ~20 seconds after one heartbeat. The task stays zombied as `running` —
+   without a kanban daemon, `max-runtime` is never enforced and nothing reaps
+   it. Before dispatching, confirm the endpoint answers (e.g.
+   `curl -fsS <base_url>/models`) and restart the serving instance if needed.
+2. **Wrong-directory writes:** the worker edits the main repo checkout (or a
+   third location) instead of its worktree, then reports success.
+3. **Uncommitted / stub output:** the worker writes to the correct worktree
+   but never commits, ships stub tests (`pass` bodies), wrong session/API
+   shapes, or scripts missing environment seams — and marks the task done.
+
+Orchestrator duties:
+
+- Set up a watcher (poll `hermes kanban show <task>` until the task leaves
+  running) — dispatch gives no completion notification.
+- On completion, check ALL of: which directories changed (`git status` in the
+  kanban worktree, the managed item worktree, and the main checkout), what was
+  committed, and run the card's validation commands yourself.
+- Salvage pattern when output is partial: fix the defects yourself, commit on
+  the worker's branch with an honest message naming what was salvaged vs
+  orchestrator-fixed, merge that branch into the managed worktree
+  (`git merge --no-edit wt/<task-id>` from the managed worktree), then
+  `work complete` with truthful evidence and a `kanban comment` recording the
+  salvage.
+- Check worker placement early (a few minutes after dispatch), not only at the
+  end — catching wrong-directory writes early saves the whole run.
+- The kanban dispatcher may spawn workers in its own worktrees
+  (`.worktrees/t_<id>`) rather than the Hermoso-prepared item worktrees; the
+  worker branch must reach the managed worktree before
+  `construction integrate`.
+
 ## Dependency and Integration Lifecycle
 
 Parent completion makes a dependent card eligible; prose saying “wait for X”
@@ -202,6 +263,20 @@ The resulting `awaiting_verification` state is handled by
 dispatch it through the same ready/bind/start/complete lifecycle. Do not create
 or accept a third construction round.
 
+## Post-construction ops (verification run and release)
+
+- `hermoso verification run` on emulator-backed contracts or terraform init
+  with provider downloads takes many minutes — run it in the background with
+  notify; foreground terminal caps are too short.
+- After the run, resolve any pending `surface_resolutions` via
+  `hermoso verification resolve` (`model_node_id` may be empty when the spine
+  has no file-level nodes; mark resolved/missing with a reasoned summary).
+- **`hermoso release` merges the feature branch into whatever branch the ROOT
+  checkout currently has checked out.** Check out `main` in the root repo
+  BEFORE running release, or the merge lands on the wrong branch.
+- Release does NOT push — pushing to origin (and any deploy pipeline it
+  triggers) is a separate, explicit user decision.
+
 ## Common Pitfalls
 
 1. Dispatching before exact approval.
@@ -211,15 +286,23 @@ or accept a third construction round.
 5. Completing while a child or integration card is blocked.
 6. Copying skills or profile files into the target repository.
 7. Claiming internal repository APIs are current CLI commands.
+8. Trusting a worker's "done" without verifying placement, commits, and tests.
+9. Dispatching without confirming the profile's model endpoint is up.
+10. Expecting max-runtime enforcement without a kanban daemon running.
+11. Running `hermoso release` while the root checkout sits on a feature branch.
+12. Running long verification contracts in the foreground.
 
 ## Verification Checklist
 
 - [ ] Exact current design approval was confirmed by CLI state.
+- [ ] Profile model endpoint confirmed up before dispatch.
 - [ ] Work graph passed live validation.
 - [ ] Graph is minimal and acyclic.
 - [ ] Only compiler-returned ready cards were created.
 - [ ] Every created card was bound exactly once.
 - [ ] Workers used prepared worktrees and required skills.
+- [ ] Each worker's output verified (placement, commits, tests) before work complete.
 - [ ] Integration exists only for real fan-in.
 - [ ] Blocked and completed outcomes match evidence.
+- [ ] Root checkout on main before release.
 - [ ] Construction result reached `awaiting_verification`.

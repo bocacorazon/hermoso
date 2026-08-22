@@ -1,0 +1,414 @@
+{
+  "schema_version": "2",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-d5521aba6f502cdce404de74",
+    "feature_id": "hermoso-constitution",
+    "run_id": "run-cd8f2cc2c7caa8afecdd9c4e",
+    "repository": {
+      "repository": "/home/marcos/Projects/hermoso",
+      "remote_url": "https://github.com/bocacorazon/hermoso.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-verification-author",
+    "runtime": "agent"
+  },
+  "revision": 3,
+  "feature_design": {
+    "context": {
+      "schema_version": "hermoso-context/v1",
+      "project_id": "project-d5521aba6f502cdce404de74",
+      "feature_id": "hermoso-constitution",
+      "run_id": "run-cd8f2cc2c7caa8afecdd9c4e",
+      "repository": {
+        "repository": "/home/marcos/Projects/hermoso",
+        "remote_url": "https://github.com/bocacorazon/hermoso.git",
+        "default_branch": "main"
+      }
+    },
+    "kind": "feature-design",
+    "path": "docs/features/hermoso-constitution/design/feature-design.json",
+    "revision": 1,
+    "hash": "sha256:0c61b577177f3b8164884d2fe8a37ea594aa5d1c279f7ab8c69faee70964ec9b"
+  },
+  "base_model": {
+    "schema_version": "hermoso-repository-model/v1",
+    "snapshot_id": "model-61c6d3ee09fe1cbfd4926761c7fb9679",
+    "content_hash": "sha256:61c6d3ee09fe1cbfd4926761c7fb967985291833f554ac3e4c3ade1731946fa3",
+    "source_revision": "1b259ca0be90b6b5cf402f0f3c5c79a08cf914d9",
+    "vocabulary_version": "v1"
+  },
+  "artifacts": [
+    {
+      "id": "probe-skill-tests",
+      "kind": "probe",
+      "path": "probes/run_skill_tests.py",
+      "publication_path": "",
+      "content_hash": "sha256:f86be0d8b77d3918f97b368ebba1b030fe043b6e080dbf74b7bc031c9a784eda"
+    },
+    {
+      "id": "probe-constitution-exists",
+      "kind": "probe",
+      "path": "probes/check_constitution_exists.py",
+      "publication_path": "",
+      "content_hash": "sha256:586ac8015b912cbd54b3f4eb8752d37f28085c5e6d255531b265478e4f9963c6"
+    },
+    {
+      "id": "probe-design-gate",
+      "kind": "probe",
+      "path": "probes/check_design_gate.py",
+      "publication_path": "",
+      "content_hash": "sha256:8f05031850dad658cdc4cbbe99b663e1f1af112e5ffe83ed3a3a3e13ca69bc93"
+    },
+    {
+      "id": "probe-construction-gate",
+      "kind": "probe",
+      "path": "probes/check_construction_gate.py",
+      "publication_path": "",
+      "content_hash": "sha256:1bcd254552d80aec7a1230c80b3bafcd1edeaeefb3d2b7ebabfa7f1d13c160dc"
+    },
+    {
+      "id": "probe-escape-hatch",
+      "kind": "probe",
+      "path": "probes/check_escape_hatch.py",
+      "publication_path": "",
+      "content_hash": "sha256:94cbfee838434d2c3512aa7ee5bf9e400b8318cfd525f2d8bc178dfbf319a33a"
+    },
+    {
+      "id": "probe-profile-binding",
+      "kind": "probe",
+      "path": "probes/check_profile.py",
+      "content_hash": "sha256:198d1e103942f5545366c534e2ecf5eeebc6b7f3db64e0e18a5e5167e8aab990"
+    }
+  ],
+  "judgments": [
+    {
+      "id": "j-skill-tests-pass",
+      "title": "All skill test invariants pass with the new hermoso-constitution skill",
+      "modality": "deterministic",
+      "requirement_ids": [
+        "req-skill-invariants"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-skill-tests-pass"
+      ],
+      "surface_ids": [
+        "surface-skill-test"
+      ],
+      "execution": {
+        "command": [
+          "go",
+          "test",
+          "./skills/",
+          "-v",
+          "-run",
+          "TestSkill"
+        ],
+        "timeout_seconds": 60
+      },
+      "oracle": {
+        "type": "exit_code",
+        "expected": "0"
+      },
+      "required_evidence": [
+        "exit code",
+        "stdout"
+      ]
+    },
+    {
+      "id": "j-constitution-skill-creates",
+      "title": "Constitution skill creates docs/constitution.md with required structure",
+      "modality": "rubric",
+      "requirement_ids": [
+        "req-constitution-skill",
+        "req-constitution-storage"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-constitution-skill-creates"
+      ],
+      "surface_ids": [
+        "surface-constitution-skill",
+        "surface-constitution-doc"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os,sys; p='skills/hermoso-constitution/SKILL.md'; print('exists' if os.path.exists(p) else 'missing'); f=open(p) if os.path.exists(p) else None; c=f.read() if f else ''; print('has-create' if 'create' in c.lower() else 'no-create'); print('has-amend' if 'amend' in c.lower() else 'no-amend'); print('has-version' if 'version' in c.lower() else 'no-version'); print('has-principle' if 'principle' in c.lower() else 'no-principle')"
+        ],
+        "timeout_seconds": 10
+      },
+      "oracle": {
+        "type": "rubric"
+      },
+      "rubric": {
+        "judge": "rubric",
+        "criteria": [
+          "skills/hermoso-constitution/SKILL.md exists and has valid frontmatter with name starting hermoso-constitution",
+          "The skill describes interactive constitution creation with clarifying questions",
+          "The skill describes constitution amendment with version bump and sync impact report",
+          "The skill writes to docs/constitution.md only, never to .hermoso/",
+          "The skill contains .hermoso prohibition and never infer context language"
+        ]
+      },
+      "required_evidence": [
+        "command output",
+        "exit code"
+      ]
+    },
+    {
+      "id": "j-constitution-skill-amends",
+      "title": "Constitution skill describes amendment with version bump",
+      "modality": "rubric",
+      "requirement_ids": [
+        "req-constitution-skill"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-constitution-skill-amends"
+      ],
+      "surface_ids": [
+        "surface-constitution-skill"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os; p='skills/hermoso-constitution/SKILL.md'; f=open(p) if os.path.exists(p) else None; c=f.read() if f else ''; print('has-amend' if 'amend' in c.lower() else 'no-amend'); print('has-version-bump' if 'version' in c.lower() and 'bump' in c.lower() else 'no-version-bump'); print('has-sync-impact' if 'sync' in c.lower() or 'impact' in c.lower() else 'no-sync-impact')"
+        ],
+        "timeout_seconds": 10
+      },
+      "oracle": {
+        "type": "rubric"
+      },
+      "rubric": {
+        "judge": "rubric",
+        "criteria": [
+          "The skill describes an amendment process that bumps the constitution version",
+          "The skill describes a sync impact report noting changed principles",
+          "The amendment process preserves existing principles unless explicitly removed"
+        ]
+      },
+      "required_evidence": [
+        "command output"
+      ]
+    },
+    {
+      "id": "j-design-gate-blocks-no-constitution",
+      "title": "Design skill blocks when no constitution exists",
+      "modality": "rubric",
+      "requirement_ids": [
+        "req-constitution-post-init",
+        "req-design-gate"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-design-blocks-no-constitution"
+      ],
+      "surface_ids": [
+        "surface-design-gate"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os; p='skills/hermoso-design/SKILL.md'; f=open(p) if os.path.exists(p) else None; c=f.read() if f else ''; print('has-constitution-check' if 'constitution' in c.lower() else 'no-constitution-check'); print('has-block-no-constitution' if 'block' in c.lower() and 'constitution' in c.lower() else 'no-block'); print('has-run-constitution-first' if 'constitution' in c.lower() and ('run' in c.lower() or 'first' in c.lower()) else 'no-run-first')"
+        ],
+        "timeout_seconds": 10
+      },
+      "oracle": {
+        "type": "rubric"
+      },
+      "rubric": {
+        "judge": "rubric",
+        "criteria": [
+          "hermoso-design SKILL.md contains a constitution check step at the entry gate",
+          "The skill blocks and directs the user to run the hermoso-constitution skill if docs/constitution.md does not exist",
+          "The constitution check occurs before Phase 1 (Clarify)"
+        ]
+      },
+      "required_evidence": [
+        "command output"
+      ]
+    },
+    {
+      "id": "j-design-gate-blocks-violation",
+      "title": "Design skill blocks on constitution principle violations",
+      "modality": "rubric",
+      "requirement_ids": [
+        "req-design-gate"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-design-blocks-violation"
+      ],
+      "surface_ids": [
+        "surface-design-gate"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os; p='skills/hermoso-design/SKILL.md'; f=open(p) if os.path.exists(p) else None; c=f.read() if f else ''; print('has-violation-check' if 'violation' in c.lower() or 'violate' in c.lower() else 'no-violation-check'); print('has-block-put' if 'design put' in c.lower() and 'block' in c.lower() else 'no-block-put'); print('has-principle-check' if 'principle' in c.lower() else 'no-principle-check')"
+        ],
+        "timeout_seconds": 10
+      },
+      "oracle": {
+        "type": "rubric"
+      },
+      "rubric": {
+        "judge": "rubric",
+        "criteria": [
+          "The design skill checks the feature design against each constitution principle",
+          "The skill blocks before design put if a principle is violated without escape-hatch override",
+          "The skill reports which principle is violated when blocking"
+        ]
+      },
+      "required_evidence": [
+        "command output"
+      ]
+    },
+    {
+      "id": "j-design-gate-escape-hatch",
+      "title": "Design skill allows escape-hatch override",
+      "modality": "rubric",
+      "requirement_ids": [
+        "req-escape-hatch"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-design-allows-override"
+      ],
+      "surface_ids": [
+        "surface-design-gate"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os; p='skills/hermoso-design/SKILL.md'; f=open(p) if os.path.exists(p) else None; c=f.read() if f else ''; print('has-escape-hatch' if 'escape' in c.lower() and 'hatch' in c.lower() else 'no-escape-hatch'); print('has-override' if 'override' in c.lower() else 'no-override'); print('has-decisions' if 'decisions' in c.lower() else 'no-decisions'); print('has-rationale' if 'rationale' in c.lower() else 'no-rationale')"
+        ],
+        "timeout_seconds": 10
+      },
+      "oracle": {
+        "type": "rubric"
+      },
+      "rubric": {
+        "judge": "rubric",
+        "criteria": [
+          "The skill describes an escape-hatch override mechanism",
+          "Overrides are declared in the design's decisions array with rationale",
+          "The skill requires explicit user approval before proceeding with an override",
+          "Overrides are visible in the design doc"
+        ]
+      },
+      "required_evidence": [
+        "command output"
+      ]
+    },
+    {
+      "id": "j-construction-gate-blocks-violation",
+      "title": "Construction skill blocks on constitution violations before dispatch",
+      "modality": "rubric",
+      "requirement_ids": [
+        "req-construction-gate"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-construction-blocks-violation"
+      ],
+      "surface_ids": [
+        "surface-construction-gate"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os; p='skills/hermoso-construction/SKILL.md'; f=open(p) if os.path.exists(p) else None; c=f.read() if f else ''; print('has-constitution-check' if 'constitution' in c.lower() else 'no-constitution-check'); print('has-block-dispatch' if 'dispatch' in c.lower() and 'block' in c.lower() else 'no-block-dispatch'); print('has-escape-hatch-ref' if 'escape' in c.lower() or 'override' in c.lower() else 'no-escape-hatch-ref')"
+        ],
+        "timeout_seconds": 10
+      },
+      "oracle": {
+        "type": "rubric"
+      },
+      "rubric": {
+        "judge": "rubric",
+        "criteria": [
+          "hermoso-construction SKILL.md contains a constitution check step before dispatch",
+          "The skill reads docs/constitution.md and the approved design's decisions for overrides",
+          "The skill blocks dispatch if violations are detected without escape-hatch overrides"
+        ]
+      },
+      "required_evidence": [
+        "command output"
+      ]
+    },
+    {
+      "id": "j-profile-binding",
+      "title": "Constitution skill is bound in the default profile",
+      "modality": "deterministic",
+      "requirement_ids": [
+        "req-skill-invariants"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-skill-tests-pass"
+      ],
+      "surface_ids": [
+        "surface-profile-binding"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os,runpy;runpy.run_path(os.path.join(os.getcwd(),'docs/features/hermoso-constitution/design/probes/check_profile.py'),run_name='__main__')"
+        ],
+        "timeout_seconds": 10
+      },
+      "oracle": {
+        "type": "exit_code",
+        "expected": "0"
+      },
+      "required_evidence": [
+        "stdout",
+        "exit code"
+      ]
+    },
+    {
+      "id": "j-general-capability",
+      "title": "Constitution skill works for any Hermoso-managed project",
+      "modality": "rubric",
+      "requirement_ids": [
+        "req-general-capability"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-general-capability"
+      ],
+      "surface_ids": [
+        "surface-constitution-skill"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os; p='skills/hermoso-constitution/SKILL.md'; f=open(p) if os.path.exists(p) else None; c=f.read() if f else ''; print('has-general' if 'any' in c.lower() and 'project' in c.lower() else 'no-general'); print('has-target-repo' if 'target' in c.lower() and 'repo' in c.lower() else 'no-target-repo')"
+        ],
+        "timeout_seconds": 10
+      },
+      "oracle": {
+        "type": "rubric"
+      },
+      "rubric": {
+        "judge": "rubric",
+        "criteria": [
+          "The skill does not hardcode the Hermoso repo path",
+          "The skill works with any Hermoso-initialized project",
+          "The constitution is created in the target project's docs/ directory"
+        ]
+      },
+      "required_evidence": [
+        "command output"
+      ]
+    }
+  ],
+  "aggregation": {
+    "strategy": "all_required"
+  },
+  "coverage_exclusions": []
+}

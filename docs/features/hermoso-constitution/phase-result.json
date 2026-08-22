@@ -1,0 +1,42 @@
+{
+  "schema_version": "2",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-d5521aba6f502cdce404de74",
+    "feature_id": "hermoso-constitution",
+    "run_id": "run-cd8f2cc2c7caa8afecdd9c4e",
+    "repository": {
+      "repository": "/home/marcos/Projects/hermoso",
+      "remote_url": "https://github.com/bocacorazon/hermoso.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-construction",
+    "runtime": "agent"
+  },
+  "phase": "construction",
+  "status": "completed",
+  "summary": "All 4 work items completed and integrated. New hermoso-constitution skill created. Constitution gates added to hermoso-design and hermoso-construction. skills_test.go and profiles/default.yaml updated. All 5 skill tests pass. All probe scripts pass.",
+  "completed_at": "2026-08-22T02:00:00Z",
+  "evidence": [
+    {
+      "context": {
+        "schema_version": "hermoso-context/v1",
+        "project_id": "project-d5521aba6f502cdce404de74",
+        "feature_id": "hermoso-constitution",
+        "run_id": "run-cd8f2cc2c7caa8afecdd9c4e",
+        "repository": {
+          "repository": "/home/marcos/Projects/hermoso",
+          "remote_url": "https://github.com/bocacorazon/hermoso.git",
+          "default_branch": "main"
+        }
+      },
+      "id": "evidence-construction-tests",
+      "kind": "test",
+      "summary": "go test ./skills/ -v — all 5 tests pass",
+      "recorded_at": "2026-08-22T02:00:00Z",
+      "command": "go test ./skills/ -v"
+    }
+  ]
+}
