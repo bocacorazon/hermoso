@@ -1049,7 +1049,20 @@ func (s Service) Release(
 		return domain.Run{}, repository.IntegrationResult{}, errors.New("release requires a run in awaiting_release state")
 	}
 	if run.Publication == nil {
-		return domain.Run{}, repository.IntegrationResult{}, errors.New("release requires published Gherkin")
+		// Publication is nil only when the verification contract has no
+		// Gherkin artifacts. In that case the run correctly transitioned to
+		// awaiting_release without a publication commit. Allow the release
+		// to proceed — there is nothing to verify against.
+		hasGherkin := false
+		for _, artifact := range run.Design.Verification.Artifacts {
+			if artifact.Kind == "gherkin" {
+				hasGherkin = true
+				break
+			}
+		}
+		if hasGherkin {
+			return domain.Run{}, repository.IntegrationResult{}, errors.New("release requires published Gherkin")
+		}
 	}
 
 	// Transition: Verification/AwaitingRelease → Release/Pending

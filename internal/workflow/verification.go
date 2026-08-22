@@ -188,20 +188,42 @@ func (s Service) RunVerification(
 		return domain.Run{}, domain.VerificationReport{}, err
 	}
 	if verdict == domain.VerificationPass {
-		run, err = s.publishPassingGherkin(ctx, execution, run, attempt)
-		if err != nil {
-			blocked, blockErr := s.Store.UpdateRun(ctx, execution, func(current *domain.Run) error {
-				current.Phase = domain.PhaseVerification
-				current.Status = domain.StatusBlocked
-				current.VerificationBlocker = "Gherkin publication failed: " + err.Error()
-				current.Revision++
-				current.UpdatedAt = s.Now().UTC()
+		hasGherkin := false
+		for _, artifact := range run.Design.Verification.Artifacts {
+			if artifact.Kind == "gherkin" {
+				hasGherkin = true
+				break
+			}
+		}
+		if hasGherkin {
+			run, err = s.publishPassingGherkin(ctx, execution, run, attempt)
+			if err != nil {
+				blocked, blockErr := s.Store.UpdateRun(ctx, execution, func(current *domain.Run) error {
+					current.Phase = domain.PhaseVerification
+					current.Status = domain.StatusBlocked
+					current.VerificationBlocker = "Gherkin publication failed: " + err.Error()
+					current.Revision++
+					current.UpdatedAt = s.Now().UTC()
+					return nil
+				})
+				if blockErr != nil {
+					return domain.Run{}, report, errors.Join(err, blockErr)
+				}
+				return blocked, report, err
+			}
+		} else {
+			// No Gherkin artifacts to publish — transition directly to awaiting_release.
+			run, err = s.Store.UpdateRun(ctx, execution, func(r *domain.Run) error {
+				r.Phase = domain.PhaseVerification
+				r.Status = domain.StatusAwaitingRelease
+				r.VerificationBlocker = ""
+				r.Revision++
+				r.UpdatedAt = s.Now().UTC()
 				return nil
 			})
-			if blockErr != nil {
-				return domain.Run{}, report, errors.Join(err, blockErr)
+			if err != nil {
+				return domain.Run{}, report, err
 			}
-			return blocked, report, err
 		}
 	}
 	return run, report, err
