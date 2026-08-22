@@ -435,7 +435,6 @@ func readStateJSON(path, kind string, target interface{ Validate() error }) erro
 	}
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return fmt.Errorf("%w: decode %s state %q: %v", ErrCorruptState, kind, path, err)
 	}
