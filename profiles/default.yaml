@@ -19,7 +19,7 @@
     "construction": {
       "orchestrator_profile": "default",
       "orchestrator_skills": ["hermoso-construction", "kanban-orchestrator"],
-      "worker_profile": "default",
+      "worker_profile": "qwen38",
       "worker_skills": ["hermoso-construction", "test-driven-development", "systematic-debugging"]
     },
     "integration": {
