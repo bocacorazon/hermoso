@@ -46,8 +46,27 @@ skill writes ONLY to `docs/constitution.md` — never to `.hermoso/`.
 
 ### Step 1: Check for an Existing Constitution
 
-Read `docs/constitution.md` in the target project. If it exists, go to
-Amending a Constitution below. If it does not exist, proceed with creation.
+Check for a constitution at these locations, in order:
+
+1. **`docs/constitution.md`** — a Hermoso-managed constitution. If it exists, go to
+   Amending a Constitution below.
+2. **`.specify/memory/constitution.md`** — a constitution created by speckit (Spec
+   Kit). If it exists, create a symlink from `docs/constitution.md` to this file
+   and confirm the link. Do NOT create a separate Hermoso constitution — the
+   speckit constitution is authoritative:
+
+   ```sh
+   ln -sf .specify/memory/constitution.md docs/constitution.md
+   git add docs/constitution.md
+   ```
+
+   Confirm: "Found an existing speckit constitution at
+   `.specify/memory/constitution.md`. Symlinked it from `docs/constitution.md`
+   — this is now the project's single source of truth. To amend it, use the
+   speckit constitution workflow."
+
+   Then go to Step 5 (Confirm) — do not create a separate constitution.
+3. If neither file exists, proceed with creation (Step 2).
 
 ### Step 2: Assess the Project
 
@@ -209,3 +228,7 @@ amended constitution.
    principles.
 5. Editing `.hermoso/` state — this skill never touches control-plane state.
    The constitution is a committed markdown file, not Hermoso state.
+6. Creating a separate constitution when speckit already has one — check
+   `.specify/memory/constitution.md` BEFORE prompting the user to create a new
+   constitution. Symlink, don't duplicate. A project with two constitutions
+   (one in `.specify/memory/`, one in `docs/`) will inevitably drift.
