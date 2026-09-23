@@ -126,17 +126,33 @@ so, and step up. Nothing downgrades mid-task.
 After Phase 0 (Classify and Announce) and before any path-specific work
 (Phase 1: Clarify, Bounded Step 1, etc.), perform the constitution check.
 
-### Step 1: Read the Constitution
+### Step 1: Resolve the Constitution Path
 
-Read `docs/constitution.md` in the target project.
+Do NOT assume `docs/constitution.md`. Resolve the constitution through this
+order and use the first file that exists:
+
+1. `.hermoso/project.json` key `constitution_path` (explicit per-project
+   override), if set
+2. `docs/constitution.md`
+3. `.specify/memory/constitution.md` (Spec Kit convention — many repos that
+   adopted Spec Kit first keep their constitution here and nowhere else)
+
+Read the resolved file and record its path plus content hash in the design doc,
+so the constitution a design was checked against is auditable. **Never author a
+second constitution to satisfy the path** — two constitutions in one repo drift
+into contradiction, and a design that passes against one may violate the other.
+The block below is correct in spirit (a constitution must exist) and wrong in
+mechanism (it assumes exactly one path). See bocacorazon/hermoso#10.
 
 ### Step 2: Block if No Constitution
 
-If `docs/constitution.md` does not exist, BLOCK. Do NOT proceed to
+If none of the paths in Step 1 exist, BLOCK. Do NOT proceed to
 clarification, alternatives, contract authoring, or any other phase. Direct
 the user to run the `hermoso-constitution` skill first:
 
-> No constitution found at `docs/constitution.md`. A constitution is required
+> No constitution found at `docs/constitution.md`,
+> `.specify/memory/constitution.md`, or a `constitution_path` override. A
+> constitution is required
 > for feature work — it declares the project's governing principles that
 > feature designs must not violate. Run the `hermoso-constitution` skill to
 > create one, then resume this design.
@@ -183,7 +199,19 @@ Overrides are formal — recorded, approved, visible. They are not silent. An
 override without rationale or without explicit user approval is not a valid
 escape hatch.
 
-### Step 5: Proceed
+### Step 5: Spine Constraint Check
+
+If `docs/spine/index.md` exists in the target project, read every entry of
+kind `constraint` with status `active` (the index lists them; fetch bodies
+with `spine.py cite <id>` from the `repo-spine` skill). Assess whether the
+proposed feature design would violate any of them, exactly as with
+constitution principles in Step 3: a violation with no escape-hatch override
+declared in the design's `decisions` array BLOCKS before `hermoso design put`.
+The override entry must name the spine entry id (e.g. `rapid-wren-3`) in the
+`decision` field and justify it in `rationale`. If no spine exists, this step
+is a no-op — the spine is optional, the constitution is not.
+
+### Step 6: Proceed
 
 If no constitution exists (blocked at Step 2), do not proceed. If the
 constitution exists and all principles are satisfied or overridden with
@@ -677,3 +705,7 @@ For bounded features, `design.md` is the only artifact (a few paragraphs).
 10. Setting `complexity` to `"bounded"` in the feature-design JSON — the
     schema enum only accepts `"small"`, `"standard"`, or `"complex"`. Map
     the "bounded" path to `"small"` in the JSON.
+11. Blocking on a missing `docs/constitution.md` when the repo keeps its
+    constitution at `.specify/memory/constitution.md` (Spec Kit convention).
+    Resolve the path per the Constitution Check Step 1 order before declaring
+    one absent, and never author a second constitution to satisfy the path.
