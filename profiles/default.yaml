@@ -8,7 +8,7 @@
       "skills": ["hermoso", "hermoso-constitution", "kanban-orchestrator"]
     },
     "design": {
-      "profile": "default",
+      "profile": "gemma4",
       "skills": ["hermoso-design", "hermoso-verification-author"],
       "optional_spike_skill": "spike"
     },
@@ -29,7 +29,7 @@
       "tier": "tier-0-local"
     },
     "verification": {
-      "profile": "qwen38",
+      "profile": "gemma4",
       "skills": ["hermoso-verification", "systematic-debugging"]
     }
   },
