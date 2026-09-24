@@ -150,6 +150,33 @@ func TestCommandLabelsMatchCurrentCLI(t *testing.T) {
 	}
 }
 
+func TestSmallFeatureCeremonyShrink(t *testing.T) {
+	root := repositoryRoot(t)
+	design := read(t, filepath.Join(root, "skills", "hermoso-design", "SKILL.md"))
+	if !strings.Contains(design, "verification put --derive") {
+		t.Errorf("hermoso-design must instruct the bounded path to call verification put --derive")
+	}
+	if !strings.Contains(design, "work graph") {
+		t.Errorf("hermoso-design bounded path must reference the work graph as the derivation input")
+	}
+
+	author := read(t, filepath.Join(root, "skills", "hermoso-verification-author", "SKILL.md"))
+	if !strings.Contains(author, "## Small Features") {
+		t.Errorf("hermoso-verification-author must have a Small Features section")
+	}
+	if !strings.Contains(author, "verification put --derive") {
+		t.Errorf("hermoso-verification-author small path must call verification put --derive")
+	}
+
+	verification := read(t, filepath.Join(root, "skills", "hermoso-verification", "SKILL.md"))
+	if !strings.Contains(verification, "derived") && !strings.Contains(verification, "Derived") {
+		t.Errorf("hermoso-verification must note derived contract handling")
+	}
+	if !strings.Contains(verification, "identically") {
+		t.Errorf("hermoso-verification must state derived judgments are treated identically to hand-authored ones")
+	}
+}
+
 func TestSkillsRequireExplicitContextChecks(t *testing.T) {
 	root := repositoryRoot(t)
 	for _, name := range skillNames {
