@@ -252,9 +252,26 @@ Use the `clarify` tool with two choices:
 
 ### Bounded Step 5: Author Lightweight Contracts
 
-After approval, author the feature-design JSON and verification contract.
-The contracts are still required — the JSON is the machine-validated truth
-and the verification contract defines what "done" means.
+After approval, author the feature-design JSON. The JSON is the
+machine-validated truth. For `complexity: small` (bounded) features the
+verification contract is no longer hand-authored: skip the separate
+verification-contract authoring sub-phase entirely. Instead, produce the BDD
+Gherkin artifacts and a work graph whose work items carry `validation_commands`
+covering every acceptance criterion, then persist the contract with the
+`hermoso verification put --derive <work-graph>` form so Go synthesizes it:
+
+```sh
+hermoso verification put <project-id> <feature-id> <run-id> <repository> --derive <work-graph> --json
+```
+
+With `--derive`, Hermoso reads the work graph, emits one deterministic
+`exit_code` (expected `0`) judgment per work item's `validation_commands`,
+merges in the skill's BDD judgments, and seals the result as the verification
+contract. `--derive` is restricted to `complexity: small` — a `standard` or
+`complex` design is rejected. `design approve` then validates that the derived
+contract's coverage matches every acceptance criterion. BDD Gherkin is still
+published and run at release exactly as before — only the authoring ceremony
+shrinks.
 
 **Schema mapping:** the skill path is called "bounded" but the
 feature-design JSON `complexity` enum only accepts `"small"`, `"standard"`,
@@ -273,24 +290,22 @@ or `"complex"`. Set `complexity` to `"small"` for bounded features.
    hermoso validate feature-design <path> <project-id> <feature-id> <run-id> <repository> --json
    ```
 
-3. Draft the verification contract:
-   ```sh
-   hermoso schema feature-verification-contract --json
-   ```
-
-4. Validate the verification contract:
-   ```sh
-   hermoso validate feature-verification-contract <path> <project-id> <feature-id> <run-id> <repository> --json
-   ```
-
-5. Persist the design:
+3. Persist the design:
    ```sh
    hermoso design put <project-id> <feature-id> <run-id> <repository> <design-path> --json
    ```
 
-6. Persist the verification contract:
+4. Produce the BDD Gherkin scenarios (see `hermoso-verification-author`) and
+   the work graph (see `hermoso-construction`), with each work item carrying
+   `validation_commands` that cover the acceptance criteria. Validate:
    ```sh
-   hermoso verification put <project-id> <feature-id> <run-id> <repository> <verification-path> --json
+   hermoso schema work-graph --json
+   hermoso validate work-graph <work-graph-path> <project-id> <feature-id> <run-id> <repository> --json
+   ```
+
+5. Derive and persist the verification contract from the work graph:
+   ```sh
+   hermoso verification put <project-id> <feature-id> <run-id> <repository> --derive <work-graph> --json
    ```
 
 ### Bounded Step 6: Document and Present

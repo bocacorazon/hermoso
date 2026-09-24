@@ -51,6 +51,20 @@ The verdict from Phase 1 depends on the oracle type:
   stdout/stderr) but does NOT evaluate quality. The outcome status is
   `judgment_pending` and the run transitions to `awaiting_judgment`.
 
+### Derived contracts (small features)
+
+For `complexity: small` features the sealed contract may be a *derived*
+contract: its deterministic judgments were synthesized by Go from the work
+graph's `validation_commands` (via `verification put --derive`) rather than
+hand-authored. During execution, derived judgments are treated identically
+to hand-authored ones — the same oracles, the same mechanical evaluation,
+the same evidence recording, the same pass/fail aggregation. The only
+difference is where the judgment text came from, not how it is executed.
+A derived contract still carries its BDD Gherkin artifacts, so publication
+on pass and the release regression suite run unchanged. The attempt cap
+(`max_verification_attempts`, default 2) governs derived contracts exactly
+as it governs hand-authored ones.
+
 Do not translate an infrastructure failure into a passing result. A completed
 pass/fail accounts for every required judgment.
 
