@@ -78,7 +78,8 @@ type FeatureVerificationContract struct {
 	Artifacts          []VerificationArtifact  `json:"artifacts"`
 	Judgments          []VerificationJudgment  `json:"judgments"`
 	CoverageExclusions []CoverageExclusion     `json:"coverage_exclusions,omitempty"`
-	Aggregation        VerificationAggregation `json:"aggregation"`
+	MaxVerificationAttempts *uint64                 `json:"max_verification_attempts,omitempty"`
+	Aggregation             VerificationAggregation `json:"aggregation"`
 }
 
 func DesignPackageHash(
@@ -108,6 +109,9 @@ func (c FeatureVerificationContract) Validate() error {
 	c.Producer.validate("producer", &errs)
 	if c.Revision == 0 {
 		errs.add("revision", "must be greater than zero")
+	}
+	if c.MaxVerificationAttempts != nil && *c.MaxVerificationAttempts < 1 {
+		errs.add("max_verification_attempts", "must be at least 1")
 	}
 	c.FeatureDesign.validate("feature_design", &errs)
 	if !c.FeatureDesign.Context.Equal(c.Context) {
