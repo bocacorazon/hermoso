@@ -1,0 +1,373 @@
+{
+  "schema_version": "2",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-d5521aba6f502cdce404de74",
+    "feature_id": "graduated-verification",
+    "run_id": "run-c98f54b565b5cd8dbca585d3",
+    "repository": {
+      "repository": "/home/marcos/Projects/hermoso",
+      "remote_url": "https://github.com/bocacorazon/hermoso.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-verification-author",
+    "runtime": "agent"
+  },
+  "revision": 1,
+  "feature_design": {
+    "kind": "feature-design",
+    "path": "docs/features/graduated-verification/design/feature-design.json",
+    "revision": 1,
+    "hash": "sha256:cd8564a9894abc35bd62ee8e512fa14c369292612ca58b043603f34eea3e0f59",
+    "context": {
+      "schema_version": "hermoso-context/v1",
+      "project_id": "project-d5521aba6f502cdce404de74",
+      "feature_id": "graduated-verification",
+      "run_id": "run-c98f54b565b5cd8dbca585d3",
+      "repository": {
+        "repository": "/home/marcos/Projects/hermoso",
+        "remote_url": "https://github.com/bocacorazon/hermoso.git",
+        "default_branch": "main"
+      }
+    }
+  },
+  "base_model": {
+    "schema_version": "hermoso-repository-model/v1",
+    "snapshot_id": "model-9e82c99977a406fd2f60b205bfe54a05",
+    "content_hash": "sha256:9e82c99977a406fd2f60b205bfe54a05fe31cfaf82adfac47c38a28b088bffd4",
+    "source_revision": "290b74312533e850bbe08e66b04dcbdcaa924de0",
+    "vocabulary_version": "v1"
+  },
+  "artifacts": [
+    {
+      "id": "artifact-derived-feature",
+      "kind": "gherkin",
+      "path": "features/graduated-verification.feature",
+      "content_hash": "sha256:26b6434911f431b1c31ce301496598e3ce8d936e628f47da46f8a798055e93b6",
+      "publication_path": "features/graduated-verification.feature"
+    },
+    {
+      "id": "probe-derivation",
+      "kind": "probe",
+      "path": "probes/check_derivation.py",
+      "content_hash": "sha256:3a26d11cee71bd23b32040a74c3c1b758f2d941f738ca37618a9203c1fb099ec"
+    },
+    {
+      "id": "probe-attempt-cap",
+      "kind": "probe",
+      "path": "probes/check_attempt_cap.py",
+      "content_hash": "sha256:28b61cdbe13bf94f30a639e7b67d5f14c9a97fb209701d05e19370bc216c6f82"
+    },
+    {
+      "id": "probe-amend-reset",
+      "kind": "probe",
+      "path": "probes/check_amend_reset.py",
+      "content_hash": "sha256:98f481b88899fd379fc4d70213a18e6cf426d695de7236fac6a457f69d75d0fb"
+    },
+    {
+      "id": "probe-constitution",
+      "kind": "probe",
+      "path": "probes/check_constitution.py",
+      "content_hash": "sha256:727443479f0cbf8d48a704a0ec09206b1b6bef922d94977b9721737b03825c1a"
+    },
+    {
+      "id": "probe-backward-compat",
+      "kind": "probe",
+      "path": "probes/check_backward_compat.py",
+      "content_hash": "sha256:97419a00bebf7bd730094ffd2e9c85f517e30bda8c777033cd3be158740ad5bd"
+    }
+  ],
+  "judgments": [
+    {
+      "id": "j-derived-from-graph",
+      "title": "Derivation engine produces correct judgments from work-graph validation_commands",
+      "modality": "deterministic",
+      "requirement_ids": [
+        "req-derived-small",
+        "req-derived-coverage"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-derived-from-graph"
+      ],
+      "surface_ids": [
+        "surface-derivation-engine",
+        "surface-derived-put"
+      ],
+      "invariant_node_ids": [],
+      "artifact_ids": [
+        "probe-derivation"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os,runpy;runpy.run_path(os.path.join(os.environ['HERMOSO_VERIFICATION_ASSETS'],'probes/check_derivation.py'),run_name='__main__')"
+        ],
+        "timeout_seconds": 120
+      },
+      "oracle": {
+        "type": "exit_code",
+        "expected": "0"
+      },
+      "required_evidence": [
+        "command output",
+        "exit code"
+      ]
+    },
+    {
+      "id": "j-derived-blocked-standard",
+      "title": "--derive is rejected for standard/complex features",
+      "modality": "deterministic",
+      "requirement_ids": [
+        "req-derived-restricted"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-derived-blocked-standard"
+      ],
+      "surface_ids": [
+        "surface-derived-put",
+        "surface-app-derive"
+      ],
+      "invariant_node_ids": [],
+      "artifact_ids": [
+        "probe-derivation"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os,runpy;runpy.run_path(os.path.join(os.environ['HERMOSO_VERIFICATION_ASSETS'],'probes/check_derivation.py'),run_name='__main__')"
+        ],
+        "timeout_seconds": 120
+      },
+      "oracle": {
+        "type": "exit_code",
+        "expected": "0"
+      },
+      "required_evidence": [
+        "command output",
+        "exit code"
+      ]
+    },
+    {
+      "id": "j-max-attempts-enforced",
+      "title": "max_verification_attempts is enforced at all entry points",
+      "modality": "deterministic",
+      "requirement_ids": [
+        "req-configurable-attempts",
+        "req-attempt-cap-enforced"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-max-attempts-1-blocks",
+        "ac-max-attempts-4-allows"
+      ],
+      "surface_ids": [
+        "surface-domain-attempt-cap",
+        "surface-workflow-cap",
+        "surface-max-attempts-field"
+      ],
+      "invariant_node_ids": [],
+      "artifact_ids": [
+        "probe-attempt-cap"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os,runpy;runpy.run_path(os.path.join(os.environ['HERMOSO_VERIFICATION_ASSETS'],'probes/check_attempt_cap.py'),run_name='__main__')"
+        ],
+        "timeout_seconds": 120
+      },
+      "oracle": {
+        "type": "exit_code",
+        "expected": "0"
+      },
+      "required_evidence": [
+        "command output",
+        "exit code"
+      ]
+    },
+    {
+      "id": "j-default-2",
+      "title": "Absent max_verification_attempts defaults to 2",
+      "modality": "deterministic",
+      "requirement_ids": [
+        "req-configurable-attempts",
+        "req-backward-compat"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-default-2"
+      ],
+      "surface_ids": [
+        "surface-domain-attempt-cap",
+        "surface-workflow-cap"
+      ],
+      "invariant_node_ids": [],
+      "artifact_ids": [
+        "probe-backward-compat"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os,runpy;runpy.run_path(os.path.join(os.environ['HERMOSO_VERIFICATION_ASSETS'],'probes/check_backward_compat.py'),run_name='__main__')"
+        ],
+        "timeout_seconds": 120
+      },
+      "oracle": {
+        "type": "exit_code",
+        "expected": "0"
+      },
+      "required_evidence": [
+        "command output",
+        "exit code"
+      ]
+    },
+    {
+      "id": "j-amend-resets",
+      "title": "Amendment resets the attempt budget",
+      "modality": "deterministic",
+      "requirement_ids": [
+        "req-amend-resets"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-amend-resets"
+      ],
+      "surface_ids": [
+        "surface-workflow-cap"
+      ],
+      "invariant_node_ids": [],
+      "artifact_ids": [
+        "probe-amend-reset"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os,runpy;runpy.run_path(os.path.join(os.environ['HERMOSO_VERIFICATION_ASSETS'],'probes/check_amend_reset.py'),run_name='__main__')"
+        ],
+        "timeout_seconds": 120
+      },
+      "oracle": {
+        "type": "exit_code",
+        "expected": "0"
+      },
+      "required_evidence": [
+        "command output",
+        "exit code"
+      ]
+    },
+    {
+      "id": "j-constitution-amended",
+      "title": "Constitution Principle II includes small-feature derivation clause",
+      "modality": "deterministic",
+      "requirement_ids": [
+        "req-constitution-amend"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-constitution-amended"
+      ],
+      "surface_ids": [
+        "surface-constitution-amend"
+      ],
+      "invariant_node_ids": [],
+      "artifact_ids": [
+        "probe-constitution"
+      ],
+      "execution": {
+        "command": [
+          "python3",
+          "-c",
+          "import os,runpy;runpy.run_path(os.path.join(os.environ['HERMOSO_VERIFICATION_ASSETS'],'probes/check_constitution.py'),run_name='__main__')"
+        ],
+        "timeout_seconds": 30
+      },
+      "oracle": {
+        "type": "exit_code",
+        "expected": "0"
+      },
+      "required_evidence": [
+        "command output",
+        "exit code"
+      ]
+    },
+    {
+      "id": "j-bdd-scenarios",
+      "title": "BDD gherkin scenarios for graduated verification behavior",
+      "modality": "bdd",
+      "requirement_ids": [
+        "req-derived-small",
+        "req-derived-coverage",
+        "req-derived-bdd",
+        "req-configurable-attempts",
+        "req-attempt-cap-enforced",
+        "req-amend-resets",
+        "req-backward-compat"
+      ],
+      "acceptance_criterion_ids": [
+        "ac-derived-from-graph",
+        "ac-derived-coverage",
+        "ac-max-attempts-1-blocks",
+        "ac-max-attempts-4-allows",
+        "ac-default-2",
+        "ac-amend-resets"
+      ],
+      "surface_ids": [
+        "surface-derived-put",
+        "surface-derivation-engine",
+        "surface-domain-attempt-cap",
+        "surface-workflow-cap"
+      ],
+      "invariant_node_ids": [],
+      "artifact_ids": [
+        "artifact-derived-feature"
+      ],
+      "scenario_ids": [
+        "scenario-small-feature-derives-correct-contract",
+        "scenario-standard-feature-rejects-derive",
+        "scenario-derivation-covers-all-criteria",
+        "scenario-max-one-attempt-blocks-after-failure",
+        "scenario-max-four-attempts-allows-remediation",
+        "scenario-absent-max-defaults-to-two",
+        "scenario-amend-resets-attempt-budget",
+        "scenario-constitution-contains-small-clause",
+        "scenario-small-feature-still-publishes-gherkin"
+      ],
+      "execution": {
+        "command": [
+          "behave",
+          "features/"
+        ],
+        "timeout_seconds": 180
+      },
+      "oracle": {
+        "type": "gherkin"
+      },
+      "required_evidence": [
+        "gherkin test results"
+      ]
+    }
+  ],
+  "coverage_exclusions": [
+    {
+      "target_kind": "requirement",
+      "target_id": "req-skill-ceremony-shrink",
+      "rationale": "Skill behavior for small features is verified by go test ./skills/ -v (project-wide skill test suite). Dedicated gherkin scenarios for skill behavior would duplicate the framework's own tests."
+    },
+    {
+      "target_kind": "acceptance_criterion",
+      "target_id": "ac-skill-ceremony-shrink",
+      "rationale": "Skill behavior is verified by go test ./skills/ -v (the project-wide skill test suite), not by per-feature gherkin scenarios. The constitution already requires skill tests to pass."
+    },
+    {
+      "target_kind": "acceptance_criterion",
+      "target_id": "ac-derived-bdd-published",
+      "rationale": "Gherkin publication is a generic Hermoso mechanism tested by existing infrastructure; the j-bdd-scenarios judgment exercises publication indirectly. An explicit scenario would duplicate the framework's own tests."
+    }
+  ],
+  "aggregation": {
+    "strategy": "all_required"
+  }
+}

@@ -1,0 +1,269 @@
+{
+  "schema_version": "2",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-d5521aba6f502cdce404de74",
+    "feature_id": "graduated-verification",
+    "run_id": "run-c98f54b565b5cd8dbca585d3",
+    "repository": {
+      "repository": "/home/marcos/Projects/hermoso",
+      "remote_url": "https://github.com/bocacorazon/hermoso.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-design",
+    "runtime": "agent"
+  },
+  "revision": 1,
+  "feature": {
+    "id": "graduated-verification",
+    "title": "Graduated Verification — derived contracts for small features + configurable attempt cap",
+    "objective": "Make Hermoso's verification ceremony graduated: small-complexity features get a Go-synthesized contract derived from work-graph validation commands instead of a hand-authored one, and the hard two-attempt cap becomes a configurable max_verification_attempts field on the verification contract sealed at design time. The constitution is amended to allow this.",
+    "target_repository": {
+      "repository": "/home/marcos/Projects/hermoso",
+      "remote_url": "https://github.com/bocacorazon/hermoso.git",
+      "default_branch": "main"
+    }
+  },
+  "base_model": {
+    "schema_version": "hermoso-repository-model/v1",
+    "snapshot_id": "model-9e82c99977a406fd2f60b205bfe54a05",
+    "content_hash": "sha256:9e82c99977a406fd2f60b205bfe54a05fe31cfaf82adfac47c38a28b088bffd4",
+    "source_revision": "290b74312533e850bbe08e66b04dcbdcaa924de0",
+    "vocabulary_version": "v1"
+  },
+  "requirements": [
+    {
+      "id": "req-derived-small",
+      "title": "Derived contracts for small features",
+      "statement": "When complexity is 'small', hermoso verification put --derive <work-graph-path> shall synthesize a FeatureVerificationContract whose deterministic judgments are derived from the work graph's validation_commands (one judgment per work item with non-empty validation commands, oracle: exit_code expected '0', modality: deterministic). BDD judgments from an optional --bdd partial contract are merged in.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-derived-restricted",
+      "title": "--derive restricted to small complexity",
+      "statement": "hermoso verification put --derive shall reject with an error when the run's feature-design complexity is 'standard' or 'complex'. The flag is only legal for 'small'.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-derived-coverage",
+      "title": "Derived contracts maintain coverage integrity",
+      "statement": "A derived contract's judgments shall cover every requirement and acceptance criterion from the feature design, either via deterministic judgments (work-graph sourced) or BDD judgments (partial contract sourced). The existing coverage validation (validateReportCompleteness) shall pass.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-derived-bdd",
+      "title": "Small features still produce and run BDD",
+      "statement": "Small features with derived contracts shall still publish Gherkin scenarios and run the BDD regression suite at release. The ceremony shrink applies only to deterministic judgment authoring, not to BDD artifacts.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-configurable-attempts",
+      "title": "Configurable max_verification_attempts",
+      "statement": "FeatureVerificationContract shall carry a max_verification_attempts field (*uint64, default 2 when absent, validated ≥1). RunVerification, JudgeVerification, and PutSurfaceResolutions shall use this value instead of the hardcoded '2' when deciding whether to allow a new attempt or block.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-attempt-cap-enforced",
+      "title": "Attempt cap enforced at all verification entry points",
+      "statement": "The configured max_verification_attempts shall be enforced in RunVerification (line 42: len(attempts) >= cap → block), persistVerificationAttempt (attempt.Number < cap → remediation, else blocked), PutSurfaceResolutions, and JudgeVerification.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-amend-resets",
+      "title": "Amendment resets the attempt budget",
+      "statement": "verification amend shall clear all verification attempts (as it already does) and the new budget from the corrected contract shall govern subsequent attempts. No change to the amend.go logic is needed.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-constitution-amend",
+      "title": "Constitution amended for small-feature derivation",
+      "statement": "Principles I–VIII shall remain intact. Principle II (Verification Gate) shall gain text clarifying that features classified complexity: small may derive their verification contract from work-graph validation commands rather than a hand-authored contract. The amendment is a MINOR version bump with a sync impact report.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-skill-ceremony-shrink",
+      "title": "Skills skip contract authoring for small features",
+      "statement": "hermoso-design and hermoso-verification-author skills shall recognize complexity: small and skip the hand-authored verification-contract sub-phase, instead producing BDD artifacts + work graph and calling verification put --derive.",
+      "kind": "functional",
+      "priority": "must"
+    },
+    {
+      "id": "req-backward-compat",
+      "title": "Backward compatibility for existing runs and contracts",
+      "statement": "Existing runs and contracts without max_verification_attempts shall default to 2 attempts. Old run.json files load with the field absent and behave identically to the pre-feature behavior.",
+      "kind": "compatibility",
+      "priority": "must"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "ac-derived-from-graph",
+      "statement": "Given a small-complexity design and a work graph whose items carry validation_commands, when verification put --derive is called, the persisted contract's judgments include one deterministic exit_code judgment per non-empty validation_commands entry.",
+      "requirement_ids": ["req-derived-small"]
+    },
+    {
+      "id": "ac-derived-blocked-standard",
+      "statement": "Given a standard-complexity design, when verification put --derive is called, the CLI exits non-zero with an error message indicating derivation is restricted to small features.",
+      "requirement_ids": ["req-derived-restricted"]
+    },
+    {
+      "id": "ac-derived-coverage",
+      "statement": "Given a small feature-design with requirements and acceptance criteria, the derived verification contract passes schema validation and the existing cross-validation (ValidateContract) confirms full coverage.",
+      "requirement_ids": ["req-derived-coverage"]
+    },
+    {
+      "id": "ac-max-attempts-1-blocks",
+      "statement": "Given a contract with max_verification_attempts: 1, after a failed first verification attempt the run transitions to verification/blocked with no remediation round available.",
+      "requirement_ids": ["req-configurable-attempts", "req-attempt-cap-enforced"]
+    },
+    {
+      "id": "ac-max-attempts-4-allows",
+      "statement": "Given a contract with max_verification_attempts: 4, up to 4 verification attempts are allowed; failures at attempts 1–3 produce remediation rounds; the 4th failure blocks.",
+      "requirement_ids": ["req-configurable-attempts", "req-attempt-cap-enforced"]
+    },
+    {
+      "id": "ac-default-2",
+      "statement": "Given a contract without max_verification_attempts (nil/absent), RunVerification allows exactly 2 attempts — matching pre-feature behavior.",
+      "requirement_ids": ["req-configurable-attempts", "req-backward-compat"]
+    },
+    {
+      "id": "ac-amend-resets",
+      "statement": "A verification amendment clears all prior attempt history and the new corrected contract's max_verification_attempts governs the fresh budget.",
+      "requirement_ids": ["req-amend-resets"]
+    },
+    {
+      "id": "ac-constitution-amended",
+      "statement": "docs/constitution.md contains the amended Principle II with the small-feature derivation clause, a bumped version (1.1.0), and a dated sync impact report.",
+      "requirement_ids": ["req-constitution-amend"]
+    },
+    {
+      "id": "ac-skill-ceremony-shrink",
+      "statement": "Given a small-complexity design, the hermoso-design skill skips the verification-contract sub-phase and directs the user to produce BDD artifacts + work graph, then call verification put --derive.",
+      "requirement_ids": ["req-skill-ceremony-shrink"]
+    },
+    {
+      "id": "ac-derived-bdd-published",
+      "statement": "Given a small feature with a derived contract that passes verification, the Gherkin scenarios are published to features/ and run in the release regression suite.",
+      "requirement_ids": ["req-derived-bdd"]
+    }
+  ],
+  "interaction_surfaces": [
+    {
+      "id": "surface-derived-put",
+      "title": "verification put --derive CLI flag",
+      "kind": "cli",
+      "source": "planned",
+      "description": "New --derive <work-graph-path> flag on hermoso verification put, with optional --bdd <partial-contract-path>. Triggers the DeriveVerification workflow and persists the resulting contract."
+    },
+    {
+      "id": "surface-max-attempts-field",
+      "title": "max_verification_attempts contract field",
+      "kind": "cli",
+      "source": "planned",
+      "description": "New optional uint64 field on FeatureVerificationContract schema, default 2, validated >= 1. Surfaces in hermoso schema feature-verification-contract output."
+    },
+    {
+      "id": "surface-domain-attempt-cap",
+      "title": "Domain validation: configurable attempt cap",
+      "kind": "library",
+      "source": "planned",
+      "description": "internal/domain/lifecycle.go and verification_report.go: Run.Validate() and VerificationReport.Validate() read max_verification_attempts from the Design.Verification contract instead of hardcoded 2."
+    },
+    {
+      "id": "surface-workflow-cap",
+      "title": "Workflow: RunVerification, JudgeVerification, PutSurfaceResolutions",
+      "kind": "library",
+      "source": "planned",
+      "description": "internal/workflow/verification.go: all attempt-cap checks (lines 42, 309-315, 699-705, 980-985) use max_verification_attempts from the contract."
+    },
+    {
+      "id": "surface-derivation-engine",
+      "title": "DeriveVerification workflow function",
+      "kind": "library",
+      "source": "planned",
+      "description": "New internal/workflow/derived_contract.go: DeriveVerification(featureDesign, workGraph) synthesizes VerificationJudgment entries from work-graph validation_commands, producing exit_code oracle judgments for each work item with non-empty validation_commands."
+    },
+    {
+      "id": "surface-app-derive",
+      "title": "CLI dispatcher for --derive",
+      "kind": "library",
+      "source": "planned",
+      "description": "internal/app/app.go: 'verification put' action dispatches to DeriveVerification when --derive flag is present, after validating the design's complexity is small."
+    },
+    {
+      "id": "surface-constitution-amend",
+      "title": "Amended docs/constitution.md",
+      "kind": "file",
+      "source": "planned",
+      "description": "Principle II gains a small-feature derivation clause. Version bumped to 1.1.0 with sync impact report."
+    },
+    {
+      "id": "surface-skill-design-small",
+      "title": "hermoso-design skill: small-feature ceremony",
+      "kind": "file",
+      "source": "planned",
+      "description": "skills/hermoso-design/SKILL.md: for complexity: small, the skill skips the verification-contract authoring sub-phase and directs the user to produce BDD artifacts + work graph, then call verification put --derive."
+    },
+    {
+      "id": "surface-skill-verification-author-small",
+      "title": "hermoso-verification-author skill: BDD-only for small",
+      "kind": "file",
+      "source": "planned",
+      "description": "skills/hermoso-verification-author/SKILL.md: for complexity: small, the skill produces only BDD gherkin scenarios and artifacts (no deterministic judgments) and calls --derive."
+    },
+    {
+      "id": "surface-skill-verification-judge",
+      "title": "hermoso-verification skill: derived contract handling",
+      "kind": "file",
+      "source": "planned",
+      "description": "skills/hermoso-verification/SKILL.md: when executing a derived (small) verification contract, the skill treats derived deterministic judgments identically to hand-authored ones."
+    }
+  ],
+  "constraints": [
+    "No new lifecycle states — the attempt cap reuses existing transitions (pending, in_progress, awaiting_judgment, blocked, awaiting_remediation)",
+    "No new dependencies — derivation engine uses existing Go stdlib and project packages",
+    "max_verification_attempts is on the contract, not the profile — design-time binding, immutable once sealed",
+    "Amendment resets the budget — no change to amend.go logic",
+    "BDD still published and run for small features — only deterministic-judgment authoring ceremony shrinks"
+  ],
+  "non_goals": [
+    "Runtime budget for remediation (wall-clock) — this feature only adds iteration count",
+    "Per-judgment attempt caps — the cap is per-verification-run, not per-judgment",
+    "Automatic max_verification_attempts inference from complexity — the field is explicit",
+    "Profile-level attempt cap overrides — the contract value is authoritative"
+  ],
+  "decisions": [
+    {
+      "decision": "Go-enforced derivation — Go synthesizes verification contracts from work-graph validation_commands for small features",
+      "rationale": "The skill/Go boundary principle says deterministic operations belong in Go. Deriving judgments from a structured work graph is a deterministic mapping (validation_commands → exit_code judgments), making it correctly Go-owned. This also provides a hard guarantee that small features can never over-ceremony."
+    },
+    {
+      "decision": "--derive restricted to small complexity",
+      "rationale": "Allowing --derive for standard/complex features would bypass the hand-authoring that catches subtle integration issues. The restriction enforces that derivation is a lightweight path, not a loophole."
+    },
+    {
+      "decision": "max_verification_attempts on the verification contract, not the profile",
+      "rationale": "The verification policy is a design-time agreement between the feature author and the verifier. Putting it on the contract makes it part of the immutable design package, hashed and bound. A profile-level value could be silently changed mid-run."
+    },
+    {
+      "decision": "Default max_verification_attempts is 2",
+      "rationale": "Backward compatible with all existing contracts. New contracts may override; old ones load unchanged."
+    },
+    {
+      "decision": "Small features still publish BDD",
+      "rationale": "The BDD regression suite is a non-negotiable quality gate. The ceremony shrink applies only to how deterministic judgments are authored, not to whether BDD exists."
+    }
+  ],
+  "unresolved_questions": [],
+  "complexity": "complex"
+}

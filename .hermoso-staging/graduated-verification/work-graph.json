@@ -1,0 +1,215 @@
+{
+  "schema_version": "2",
+  "context": {
+    "schema_version": "hermoso-context/v1",
+    "project_id": "project-d5521aba6f502cdce404de74",
+    "feature_id": "graduated-verification",
+    "run_id": "run-c98f54b565b5cd8dbca585d3",
+    "repository": {
+      "repository": "/home/marcos/Projects/hermoso",
+      "remote_url": "https://github.com/bocacorazon/hermoso.git",
+      "default_branch": "main"
+    }
+  },
+  "producer": {
+    "skill": "hermoso-construction",
+    "runtime": "agent"
+  },
+  "revision": 1,
+  "items": [
+    {
+      "id": "constitution-amend",
+      "title": "Amend Principle II for small-feature derivation",
+      "prompt": "Amend docs/constitution.md Principle II (Verification Gate) to allow complexity:small features to derive their verification contract from work-graph validation commands. Bump version from 1.0.0 to 1.1.0. Add a sync impact report entry. The amended text should say: features classified `complexity: small` may derive their verification contract from work-graph validation commands rather than a hand-authored contract. Larger features keep the hand-authored contract. The escape-hatch override remains for genuine bypass. Do NOT change any other principles. Work ONLY in the assigned worktree.",
+      "acceptance_criteria": [
+        "docs/constitution.md Principle II contains the small-feature derivation clause",
+        "Version is bumped to 1.1.0",
+        "Sync impact report notes the change",
+        "No other principles are modified",
+        "go test ./skills/ -v passes all 5 tests"
+      ],
+      "requirement_ids": ["req-constitution-amend"],
+      "acceptance_criterion_ids": ["ac-constitution-amended"],
+      "surface_ids": ["surface-constitution-amend"],
+      "worker": {
+        "profile": "qwen38",
+        "skills": [
+          {"name": "hermoso-construction"},
+          {"name": "test-driven-development"},
+          {"name": "systematic-debugging"}
+        ]
+      },
+      "validation_commands": [
+        "go test ./skills/ -v -run TestSkill"
+      ]
+    },
+    {
+      "id": "max-attempts-domain-workflow",
+      "title": "Add max_verification_attempts field and enforce it in domain + workflow",
+      "prompt": "Add configurable max_verification_attempts to Hermoso:\n\nPART 1 — Domain (internal/domain/verification.go):\n- Add `MaxVerificationAttempts *uint64` field to `FeatureVerificationContract` struct\n- In Validate(), validate the field: if non-nil, must be >= 1. Absent (nil) means default 2.\n\nPART 2 — Domain validation (internal/domain/lifecycle.go):\n- In Run.Validate(), change `attempt.Number > 2` to `attempt.Number > maxAttempts` where maxAttempts is read from Design.Verification.MaxVerificationAttempts (default 2 when nil)\n\nPART 3 — Report validation (internal/domain/verification_report.go):\n- In VerificationReport.Validate(), change `r.Attempt > 2` to `r.Attempt == 0` only (remove the upper-bound check — the workflow layer enforces the cap)\n\nPART 4 — Workflow (internal/workflow/verification.go):\n- Add a helper `maxAttempts(contract FeatureVerificationContract) uint64` that returns 2 when MaxVerificationAttempts is nil, otherwise the value\n- In RunVerification line 42: change `>= 2` to `>= maxAttempts(contract)`\n- In persistVerificationAttempt (line 309): change `attempt.Number == 1` to `attempt.Number < maxAttempts(contract)` for the remediation branch\n- In PutSurfaceResolutions (line 699): same change\n- In JudgeVerification (line 980): same change\n\nPART 5 — Tests:\n- Add tests in internal/workflow/service_test.go for max_verification_attempts = 1 (blocks without remediation), = 4 (allows 3 remediation rounds), and absent (defaults to 2)\n- Run `go test ./internal/... -count=1` and ensure all pass\n\nWork ONLY in the assigned worktree. Pass explicit context to every hermoso command. Follow TDD: write tests before implementation.",
+      "acceptance_criteria": [
+        "MaxVerificationAttempts field exists on FeatureVerificationContract",
+        "max_verification_attempts=1 blocks after first failure with no remediation",
+        "max_verification_attempts=4 allows 3 remediation rounds before blocking",
+        "Absent field defaults to exactly 2 attempts (backward compatible)",
+        "go test ./internal/... -count=1 passes"
+      ],
+      "requirement_ids": ["req-configurable-attempts", "req-attempt-cap-enforced", "req-amend-resets", "req-backward-compat"],
+      "acceptance_criterion_ids": ["ac-max-attempts-1-blocks", "ac-max-attempts-4-allows", "ac-default-2", "ac-amend-resets"],
+      "surface_ids": ["surface-max-attempts-field", "surface-domain-attempt-cap", "surface-workflow-cap"],
+      "worker": {
+        "profile": "qwen38",
+        "skills": [
+          {"name": "hermoso-construction"},
+          {"name": "test-driven-development"},
+          {"name": "systematic-debugging"}
+        ]
+      },
+      "validation_commands": [
+        "go test ./internal/domain/... -count=1",
+        "go test ./internal/workflow/... -count=1"
+      ]
+    },
+    {
+      "id": "skill-updates",
+      "title": "Update three skills for small-feature ceremony shrink",
+      "prompt": "Update three Hermoso skills to support small-feature ceremony:\n\n1. skills/hermoso-design/SKILL.md: In the 'Path: Bounded' section, add a note that for complexity:small (bounded→small), the skill skips the hand-authored verification-contract sub-phase. Instead it produces BDD artifacts + work graph, then calls `hermoso verification put --derive <work-graph>`. Add this to Bounded Step 5 (Author Lightweight Contracts).\n\n2. skills/hermoso-verification-author/SKILL.md: Add a section for 'Small Features' explaining that when complexity is small, the skill produces ONLY BDD gherkin scenarios and artifacts (no deterministic judgments), and calls `hermoso verification put --derive`. Include the same .hermoso prohibition and context-check requirements.\n\n3. skills/hermoso-verification/SKILL.md: Add a note that derived (small-feature) deterministic judgments are treated identically to hand-authored ones during verification execution.\n\nALL skills must pass the skill invariant tests. Run `go test ./skills/ -v` to verify all 5 tests pass. Work ONLY in the assigned worktree.",
+      "acceptance_criteria": [
+        "hermoso-design has bounded-path --derive instructions",
+        "hermoso-verification-author has 'Small Features' section",
+        "hermoso-verification notes derived contract handling",
+        "All 5 skill invariant tests pass",
+        "No .hermoso prohibitions are removed"
+      ],
+      "requirement_ids": ["req-skill-ceremony-shrink"],
+      "acceptance_criterion_ids": ["ac-skill-ceremony-shrink"],
+      "surface_ids": ["surface-skill-design-small", "surface-skill-verification-author-small", "surface-skill-verification-judge"],
+      "worker": {
+        "profile": "qwen38",
+        "skills": [
+          {"name": "hermoso-construction"},
+          {"name": "test-driven-development"},
+          {"name": "systematic-debugging"}
+        ]
+      },
+      "validation_commands": [
+        "go test ./skills/ -v"
+      ]
+    },
+    {
+      "id": "derivation-engine",
+      "title": "Implement DeriveVerification — synthesize contract from work-graph validation_commands",
+      "prompt": "Implement the Go derivation engine that synthesizes a FeatureVerificationContract from work-graph validation_commands for small features.\n\nCreate NEW FILE: internal/workflow/derived_contract.go\n\nFunction signature:\n```go\nfunc (s Service) DeriveVerification(\n    ctx context.Context,\n    execution domain.ContextRef,\n    design domain.FeatureDesign,\n    graph domain.WorkGraph,\n    bddContract *domain.FeatureVerificationContract,\n) (domain.FeatureVerificationContract, error)\n```\n\nLogic:\n1. Validate design.Complexity == \"small\" — return error otherwise\n2. For each work-graph item with non-empty validation_commands, create a VerificationJudgment:\n   - id: \"j-derived-{work-item-id}\"\n   - title: \"Validation commands for {work-item-id}\"\n   - modality: \"deterministic\"\n   - requirement_ids: from work item\n   - acceptance_criterion_ids: from work item\n   - surface_ids: from work item\n   - execution: command = split validation_commands[0] on spaces (the validation command string → argv), timeout_seconds = 300\n     Actually, validation_commands is []string — each entry is a full command string like \"go test ./...\". Split on spaces.\n   - oracle: type \"exit_code\", expected \"0\"\n   - required_evidence: [\"command output\", \"exit code\"]\n3. If bddContract is non-nil, merge its artifacts and BDD judgments (append to derived contract)\n4. Validate the resulting contract (c.Validate())\n5. Return the contract\n\nAlso create internal/workflow/derived_contract_test.go with tests:\n- Derives correct judgments from a work graph with validation_commands\n- Rejects non-small complexity\n- Merges BDD partial contract correctly\n- Empty work graph produces empty judgments (but still valid contract with bddContract)\n\nWork ONLY in the assigned worktree. Follow TDD: write test BEFORE implementation. Run `go test ./internal/workflow/ -run TestDerive -count=1 -v`.",
+      "acceptance_criteria": [
+        "DeriveVerification produces exit_code judgments from validation_commands",
+        "Rejects complexity != small",
+        "Merges BDD partial contract correctly",
+        "Derived contract passes Validate()",
+        "go test ./internal/workflow/ -run TestDerive passes"
+      ],
+      "requirement_ids": ["req-derived-small", "req-derived-restricted", "req-derived-coverage"],
+      "acceptance_criterion_ids": ["ac-derived-from-graph", "ac-derived-blocked-standard", "ac-derived-coverage"],
+      "surface_ids": ["surface-derivation-engine"],
+      "parents": ["max-attempts-domain-workflow"],
+      "worker": {
+        "profile": "qwen38",
+        "skills": [
+          {"name": "hermoso-construction"},
+          {"name": "test-driven-development"},
+          {"name": "systematic-debugging"}
+        ]
+      },
+      "validation_commands": [
+        "go test ./internal/workflow/ -run TestDerive -count=1 -v"
+      ]
+    },
+    {
+      "id": "cli-derive",
+      "title": "Add --derive flag to verification put CLI",
+      "prompt": "Add --derive flag support to `hermoso verification put` in internal/app/app.go.\n\nChanges:\n1. In the 'verification put' action handler, check for --derive <work-graph-path> flag\n2. When --derive is present:\n   a. Read the work graph from the path\n   b. Read the current run's feature design (complexity must be small)\n   c. Optionally read --bdd <bdd-contract-path> for BDD partial\n   d. Call service.DeriveVerification(...)\n   e. Persist the derived contract (existing verification put logic)\n3. When --derive is absent, use existing hand-authored contract flow (unchanged)\n\nRegister the flags: --derive (string, empty means no derive) and --bdd (string, optional).\n\nAdd app_test.go test for:\n- --derive with a small-complexity design succeeds\n- --derive with a standard-complexity design fails\n- --derive with a valid work graph produces a contract\n\nWork ONLY in the assigned worktree. Follow TDD. Run `go test ./internal/app/ -run TestDerive -count=1 -v`.",
+      "acceptance_criteria": [
+        "--derive flag reads work graph and derives contract",
+        "--derive on standard complexity fails with error",
+        "--bdd flag merges partial BDD contract",
+        "Absent --derive uses existing hand-authored flow unchanged",
+        "go test ./internal/app/ -run TestDerive passes"
+      ],
+      "requirement_ids": ["req-derived-small", "req-derived-restricted", "req-derived-coverage", "req-derived-bdd"],
+      "acceptance_criterion_ids": ["ac-derived-from-graph", "ac-derived-blocked-standard", "ac-derived-coverage", "ac-derived-bdd-published"],
+      "surface_ids": ["surface-derived-put", "surface-app-derive"],
+      "parents": ["derivation-engine", "max-attempts-domain-workflow"],
+      "worker": {
+        "profile": "qwen38",
+        "skills": [
+          {"name": "hermoso-construction"},
+          {"name": "test-driven-development"},
+          {"name": "systematic-debugging"}
+        ]
+      },
+      "validation_commands": [
+        "go test ./internal/app/ -run TestDerive -count=1 -v",
+        "go test ./internal/... -count=1"
+      ]
+    },
+    {
+      "id": "probes",
+      "title": "Replace stub probes with real implementations",
+      "prompt": "Replace the 5 stub probe scripts under docs/features/graduated-verification/design/probes/ with real implementations that verify the feature works:\n\n1. check_derivation.py: Runs hermoso verification put --derive with a test work graph on a small-complexity run, verifies the derived contract has the right judgments. Creates a temp run for testing.\n\n2. check_attempt_cap.py: Creates test runs with max_verification_attempts=1 and =4, verifies RunVerification enforces the cap (1 fails → blocked, 4 allows remediation rounds). Uses the Go test binary directly to test the domain logic.\n\n3. check_amend_reset.py: Verifies verification amend clears attempts and new contract's max_verification_attempts governs. Creates temp state, amends, verifies reset.\n\n4. check_constitution.py: Reads docs/constitution.md, checks Principle II contains the small-feature derivation clause and version >= 1.1.0.\n\n5. check_backward_compat.py: Creates a contract without max_verification_attempts, verifies RunVerification defaults to 2 attempts.\n\nAll probes must exit 0 on success, non-zero on failure. Use os.environ['HERMOSO_VERIFICATION_ASSETS'] for paths. Prefer running go test for domain verification; use the hermoso binary for CLI behavior.\n\nWork ONLY in the assigned worktree.",
+      "acceptance_criteria": [
+        "All 5 probes exit 0 when the feature is correct",
+        "check_derivation.py exercises --derive end-to-end",
+        "check_attempt_cap.py verifies 1-attempt and 4-attempt caps",
+        "check_constitution.py verifies the amendment text",
+        "Probes use HERMOSO_VERIFICATION_ASSETS for paths"
+      ],
+      "requirement_ids": ["req-derived-small", "req-derived-coverage", "req-configurable-attempts", "req-attempt-cap-enforced", "req-amend-resets", "req-constitution-amend", "req-backward-compat"],
+      "acceptance_criterion_ids": ["ac-derived-from-graph", "ac-derived-coverage", "ac-max-attempts-1-blocks", "ac-max-attempts-4-allows", "ac-default-2", "ac-amend-resets", "ac-constitution-amended"],
+      "surface_ids": ["surface-derived-put", "surface-derivation-engine", "surface-domain-attempt-cap", "surface-workflow-cap", "surface-constitution-amend"],
+      "parents": ["cli-derive"],
+      "worker": {
+        "profile": "qwen38",
+        "skills": [
+          {"name": "hermoso-construction"},
+          {"name": "test-driven-development"},
+          {"name": "systematic-debugging"}
+        ]
+      },
+      "validation_commands": [
+        "python3 probes/check_constitution.py",
+        "python3 probes/check_derivation.py",
+        "python3 probes/check_attempt_cap.py",
+        "python3 probes/check_amend_reset.py",
+        "python3 probes/check_backward_compat.py"
+      ]
+    },
+    {
+      "id": "integration",
+      "title": "Integration: full test suite, build, and final verification",
+      "prompt": "Run the full integration checks:\n\n1. Rebuild the binary: go build -o /tmp/hermoso ./cmd/hermoso\n2. Run full Go test suite: go test ./internal/... -count=1\n3. Run skill tests: go test ./skills/ -v\n4. Run all probes from the design/probes directory\n5. Verify the new binary supports --derive and max_verification_attempts via smoke tests\n6. Fix any failures\n\nWork ONLY in the assigned worktree. The parent items' commits must be merged into this worktree before running integration.",
+      "acceptance_criteria": [
+        "go test ./internal/... -count=1 passes",
+        "go test ./skills/ -v passes",
+        "All probes exit 0",
+        "Binary builds without CGO",
+        "Smoke test: --derive works on a small-complexity run"
+      ],
+      "requirement_ids": ["req-derived-small", "req-derived-restricted", "req-derived-coverage", "req-derived-bdd", "req-configurable-attempts", "req-attempt-cap-enforced", "req-amend-resets", "req-constitution-amend", "req-skill-ceremony-shrink", "req-backward-compat"],
+      "acceptance_criterion_ids": ["ac-derived-from-graph", "ac-derived-blocked-standard", "ac-derived-coverage", "ac-max-attempts-1-blocks", "ac-max-attempts-4-allows", "ac-default-2", "ac-amend-resets", "ac-constitution-amended", "ac-skill-ceremony-shrink", "ac-derived-bdd-published"],
+      "surface_ids": ["surface-derived-put", "surface-max-attempts-field", "surface-domain-attempt-cap", "surface-workflow-cap", "surface-derivation-engine", "surface-app-derive", "surface-constitution-amend", "surface-skill-design-small", "surface-skill-verification-author-small", "surface-skill-verification-judge"],
+      "parents": ["constitution-amend", "skill-updates", "probes"],
+      "worker": {
+        "profile": "qwen38",
+        "skills": [
+          {"name": "hermoso-construction"},
+          {"name": "test-driven-development"},
+          {"name": "systematic-debugging"}
+        ]
+      },
+      "validation_commands": [
+        "go test ./internal/... -count=1",
+        "go test ./skills/ -v",
+        "go build -o /tmp/hermoso ./cmd/hermoso"
+      ]
+    }
+  ]
+}
