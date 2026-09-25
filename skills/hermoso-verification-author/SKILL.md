@@ -84,6 +84,44 @@ Before finalizing, verify no scenario contains unresolved placeholders
 The contract validator checks structural properties only — content quality
 is the author's responsibility.
 
+## Small Features
+
+When the feature design's `complexity` is `small` (the bounded path), the
+authoring ceremony shrinks. Produce ONLY BDD Gherkin scenarios and their
+artifacts — no hand-authored deterministic judgments, no full
+feature-verification-contract JSON. The deterministic side of the contract is
+synthesized by Go from the work graph's `validation_commands`, so there is
+nothing to hand-write for it.
+
+Flow for `complexity: small`:
+
+1. Write the Gherkin scenarios and scenario artifacts exactly as the full
+   authoring flow requires (tags, IDs, hashes, publication paths).
+2. Ensure a work graph exists whose work items carry `validation_commands`
+   that cover every acceptance criterion. If the design flow has not produced
+   one yet, author it now (the construction skill consumes the same graph).
+3. Derive and persist the contract with `hermoso verification put --derive
+   <work-graph>` instead of `put`ing a hand-written one:
+
+   ```sh
+   hermoso verification put <project-id> <feature-id> <run-id> <repository> --derive <work-graph> --json
+   ```
+
+   Hermoso reads the work graph, emits one deterministic `exit_code` (expected
+   `0`) judgment per work item's `validation_commands`, merges the BDD
+   judgments, and seals the result as the verification contract.
+4. Present the package for approval exactly as in the full flow.
+
+`--derive` is restricted to `complexity: small` — Go rejects it for
+`standard` and `complex` designs, which keep the hand-authored contract from
+the full flow. BDD Gherkin is still published and run at release unchanged.
+
+The same boundary rules apply on the small path: never edit `.hermoso/**`;
+never infer identity from cwd, conversation, branch names, or assets; pass
+explicit context (project-id, feature-id, run-id, repository) to every
+`hermoso` command and call `hermoso context` to resolve the canonical tuple
+when needed.
+
 ## Completion
 
 Present the human reviewer with the exact package revision/hash, coverage,
@@ -93,5 +131,6 @@ modalities, exclusions, and publication paths. The single approval is:
 hermoso approve design <project-id> <feature-id> <run-id> <repository> <package-revision> <package-hash> <actor> [comment] --json
 ```
 
-Do not author the work graph and do not disclose verifier assets to
-construction.
+Do not disclose verifier assets to construction. On the standard and complex
+paths the skill does not author the work graph; on the small path the work
+graph is the derivation input (see Small Features above).

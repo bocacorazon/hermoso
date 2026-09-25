@@ -1,3 +1,13 @@
+<!--
+SYNC IMPACT REPORT: Amendments to v1.1.0 (2026-09-20 → 2026-09-24)
+- Version change: v1.0.0 → v1.1.0
+- Modified principles:
+  - II. Verification Gate — added small-feature derivation clause (complexity: small features may derive their verification contract from work-graph validation commands rather than hand-authoring it)
+- Added sections: none
+- Removed sections: none
+- Follow-up TODOs: none
+-->
+
 # Hermoso Constitution
 
 Guiding principles and quality gates for Hermoso — a Go control plane for Hermes-driven feature development.
@@ -15,6 +25,7 @@ Guiding principles and quality gates for Hermoso — a Go control plane for Herm
 
 - Every feature MUST pass formal verification before release.
 - Verification contracts are written at design time and executed at verification time.
+- Features classified `complexity: small` MAY derive their verification contract from work-graph validation commands rather than hand-authoring a contract. Larger features (standard/complex) MUST keep the hand-authored contract.
 - A formal escape-hatch override — declared in the design's `decisions` array — is required to bypass verification. Waivers without documentation are forbidden.
 - **Rationale:** Verification proves the feature works as designed. Without a hard gate, verification becomes optional ceremony and defects reach production. The escape hatch exists for genuine edge cases (e.g., external dependency unavailable) but requires a paper trail.
 
@@ -70,5 +81,5 @@ Guiding principles and quality gates for Hermoso — a Go control plane for Herm
 - **Versioning:** Semantic versioning — MAJOR for incompatible principle removals or redefinitions, MINOR for new principles or material expansions, PATCH for clarifications and wording fixes.
 - **Compliance review:** Feature designs are checked against the constitution at design time (hard gate) and construction time (hard gate). Violations require a formal escape-hatch override in the design's `decisions` array.
 - **Ratification date:** 2026-09-20
-- **Last amended:** 2026-09-20
-- **Constitution version:** 1.0.0
+- **Last amended:** 2026-09-24
+- **Constitution version:** 1.1.0
