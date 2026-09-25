@@ -643,6 +643,78 @@ func (a application) runVerificationContract(ctx context.Context, args []string)
 			fmt.Sprintf("amended verification contract revision %d, attempts reset\n", run.Design.Verification.Revision),
 		)
 	}
+	// PUT handler: support --derive for small-complexity features.
+	deriveIdx := -1
+	for i, r := range rest {
+		if r == "--derive" {
+			deriveIdx = i
+			break
+		}
+	}
+	if deriveIdx >= 0 {
+		if len(rest) <= deriveIdx+1 {
+			return a.out.usageError("verification put --derive requires <work-graph-path>")
+		}
+		graphPath := rest[deriveIdx+1]
+		var bddPath string
+		for i := deriveIdx + 2; i < len(rest); i++ {
+			if rest[i] == "--bdd" && i+1 < len(rest) {
+				bddPath = rest[i+1]
+				break
+			}
+		}
+		graphData, err := a.deps.FS.ReadFile(graphPath)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorInternal, fmt.Sprintf("read work graph: %v", err))
+		}
+		var graph domain.WorkGraph
+		if err := json.Unmarshal(graphData, &graph); err != nil {
+			return a.out.failure(ExitFailure, ErrorValidation, fmt.Sprintf("decode work graph: %v", err))
+		}
+		run, err := store.Run(ctx, execution)
+		if err != nil {
+			return a.stateFailure(err)
+		}
+		if run.Design == nil || run.Design.Approval == nil {
+			return a.out.failure(ExitFailure, ErrorState, "derived verification requires an approved design package")
+		}
+		var bdd *domain.FeatureVerificationContract
+		if bddPath != "" {
+			bddData, err := a.deps.FS.ReadFile(bddPath)
+			if err != nil {
+				return a.out.failure(ExitFailure, ErrorInternal, fmt.Sprintf("read bdd contract: %v", err))
+			}
+			var bddContract domain.FeatureVerificationContract
+			if err := json.Unmarshal(bddData, &bddContract); err != nil {
+				return a.out.failure(ExitFailure, ErrorValidation, fmt.Sprintf("decode bdd contract: %v", err))
+			}
+			bdd = &bddContract
+		}
+		designRef := domain.ContractReference{
+			Context:  execution,
+			Kind:     "feature-design",
+			Path:     "docs/features/" + execution.FeatureID + "/design/feature-design.json",
+			Revision: run.Design.Revision,
+			Hash:     run.Design.FeatureHash,
+		}
+		contract, err := service.DeriveVerification(ctx, execution, run.Design.Feature, graph, bdd, run.Design.Feature.BaseModel, designRef)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorState, err.Error())
+		}
+		contractJSON, err := json.Marshal(contract)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorInternal, fmt.Sprintf("marshal derived contract: %v", err))
+		}
+		run, changed, err := service.PutVerificationContract(ctx, execution, contractJSON, nil)
+		if err != nil {
+			return a.out.failure(ExitFailure, ErrorState, err.Error())
+		}
+		return a.out.success(
+			"verification put --derive",
+			map[string]any{"run": run, "design": run.Design, "changed": changed},
+			fmt.Sprintf("persisted derived verification contract revision %d %s\n", run.Design.Revision, run.Design.PackageHash),
+		)
+	}
 	if len(rest) != 1 {
 		return a.out.usageError("verification put requires exactly one contract path after full context")
 	}
