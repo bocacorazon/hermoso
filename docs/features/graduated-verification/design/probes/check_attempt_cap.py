@@ -3,7 +3,7 @@
 import sys, subprocess, os
 
 assets = os.environ.get("HERMOSO_VERIFICATION_ASSETS", os.getcwd())
-repo = os.path.dirname(os.path.dirname(assets))
+repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(assets))))
 
 # The workflow tests cover max_verification_attempts enforcement.
 result = subprocess.run(

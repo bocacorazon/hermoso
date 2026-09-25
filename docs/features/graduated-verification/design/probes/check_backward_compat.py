@@ -7,7 +7,7 @@ import sys
 import subprocess, os
 
 assets = os.environ.get("HERMOSO_VERIFICATION_ASSETS", os.getcwd())
-repo = os.path.dirname(os.path.dirname(assets))  # up to repo root
+repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(assets))))
 
 result = subprocess.run(
     ["go", "test", "./internal/domain/...", "-count=1"],

@@ -3,7 +3,8 @@
 import os, sys
 
 assets = os.environ.get("HERMOSO_VERIFICATION_ASSETS", os.getcwd())
-path = os.path.join(assets, "docs", "constitution.md")
+repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(assets))))
+path = os.path.join(repo, "docs", "constitution.md")
 
 with open(path) as f:
     text = f.read()
