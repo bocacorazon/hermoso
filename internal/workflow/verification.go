@@ -22,6 +22,13 @@ import (
 	"github.com/bocacorazon/hermoso/internal/model"
 )
 
+func maxAttempts(contract *domain.FeatureVerificationContract) uint64 {
+	if contract == nil || contract.MaxVerificationAttempts == nil {
+		return 2
+	}
+	return *contract.MaxVerificationAttempts
+}
+
 func (s Service) RunVerification(
 	ctx context.Context,
 	execution domain.ContextRef,
@@ -39,8 +46,8 @@ func (s Service) RunVerification(
 	if run.Design == nil || run.Design.Verification == nil || run.Design.Approval == nil {
 		return domain.Run{}, domain.VerificationReport{}, errors.New("verification requires an approved design package")
 	}
-	if len(run.VerificationAttempts) >= 2 {
-		return domain.Run{}, domain.VerificationReport{}, errors.New("verification is limited to two attempts")
+	if uint64(len(run.VerificationAttempts)) >= maxAttempts(run.Design.Verification) {
+		return domain.Run{}, domain.VerificationReport{}, errors.New("verification attempt limit reached")
 	}
 	if err := s.validateIntegratedCommits(run); err != nil {
 		return domain.Run{}, domain.VerificationReport{}, err
@@ -306,7 +313,11 @@ func (s Service) persistVerificationAttempt(
 			run.Phase = domain.PhaseVerification
 			run.Status = domain.StatusAwaitingJudgment
 		case domain.VerificationFail:
-			if attempt.Number == 1 {
+			maxA := uint64(2)
+			if run.Design != nil && run.Design.Verification != nil {
+				maxA = maxAttempts(run.Design.Verification)
+			}
+			if attempt.Number < maxA {
 				run.Phase = domain.PhaseConstruction
 				run.Status = domain.StatusAwaitingRemediation
 			} else {
@@ -696,7 +707,11 @@ func (s Service) PutSurfaceResolutions(
 			r.Phase = domain.PhaseVerification
 			r.Status = domain.StatusInProgress
 		case domain.VerificationFail:
-			if attempt.Number == 1 {
+			maxA := uint64(2)
+			if r.Design != nil && r.Design.Verification != nil {
+				maxA = maxAttempts(r.Design.Verification)
+			}
+			if attempt.Number < maxA {
 				r.Phase = domain.PhaseConstruction
 				r.Status = domain.StatusAwaitingRemediation
 			} else {
@@ -977,7 +992,11 @@ func (s Service) JudgeVerification(
 			r.Phase = domain.PhaseVerification
 			r.Status = domain.StatusInProgress
 		case domain.VerificationFail:
-			if attempt.Number == 1 {
+			maxA := uint64(2)
+			if r.Design != nil && r.Design.Verification != nil {
+				maxA = maxAttempts(r.Design.Verification)
+			}
+			if attempt.Number < maxA {
 				r.Phase = domain.PhaseConstruction
 				r.Status = domain.StatusAwaitingRemediation
 			} else {
