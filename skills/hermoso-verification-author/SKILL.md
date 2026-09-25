@@ -1,7 +1,7 @@
 ---
 name: hermoso-verification-author
 description: "Use when a feature design is persisted to author the hidden hybrid verification contract, Gherkin, and verifier assets that complete one approvable Hermoso design package."
-version: 1.0.0
+version: 1.1.0
 author: Hermoso
 license: MIT
 platforms: [linux, macos, windows]
@@ -65,10 +65,68 @@ hashes the declared assets, seals them clone-locally, and returns the atomic
 design-package revision/hash. Any design, contract, artifact, or model change
 invalidates approval.
 
+## Contract authoring rules (validator gotchas)
+
+Learned from repeated validation rejections — check these before ingesting:
+
+- **argv only, no shell wrappers.** `execution.command` must be direct argv.
+  `["/bin/bash", "-c", "..."]` is rejected ("must execute argv directly
+  rather than a shell command string"). `python -c` IS accepted (it is an
+  interpreter argv, not a shell), but each argv value must be a single line —
+  control characters (newlines) in argv values are rejected.
+- **Multi-step orchestration goes in probe artifacts.** When a judgment needs
+  service startup/teardown, env wiring, or sequencing, write it as an artifact
+  with `kind: probe` (e.g. `probes/run_emulator_e2e.py`) and invoke it with a
+  one-line runpy:
+  `["<python>", "-c", "import os,runpy;runpy.run_path(os.path.join(os.environ['HERMOSO_VERIFICATION_ASSETS'],'probes/<name>.py'),run_name='__main__')"]`
+- **Point commands at the interpreter that has the dependencies.** System
+  `python3` usually lacks repo deps (flask, pytest...). Use a dedicated venv
+  python absolute path in every judgment command, and make probe scripts use
+  `sys.executable` for subprocesses so the venv propagates.
+- **feature_design reference binds the CONTENT revision.** `verification put`
+  cross-checks `feature_design.revision` against the design's content revision
+  (the `revision` field inside the design file), NOT the wrapper revision the
+  `design put` response reports (that one auto-increments and can differ).
+  Read the persisted run state (`design.feature_design.revision` +
+  `design.feature_hash`) before writing the reference.
+- **Judgment required fields** (verify with the live schema each time):
+  `id`, `title`, `modality`, `requirement_ids`, `acceptance_criterion_ids`,
+  `surface_ids` (minItems 1), `execution`, `oracle`, `required_evidence`.
+- **BDD judgments: one per scenario.** Each scenario's `@judgment` tag names
+  its own judgment, and its `@requirement/@criterion/@surface/@term` tags must
+  exactly match that judgment's ID lists. Every `@scenario` with a `@judgment`
+  tag must appear in that judgment's `scenario_ids`. A single umbrella BDD
+  judgment over many scenarios fails cross-validation.
+- **Coverage is enforced.** Every requirement and acceptance criterion must be
+  cited by at least one judgment, or listed in `coverage_exclusions` with a
+  rationale (e.g. capability absent on the verification host — name the
+  compensating judgments that cover the intent structurally). Missing coverage
+  causes `verification put` to fail with "has no judgment or approved
+  exclusion." For implementation-level requirements that can't be probed with
+  shell scripts, use a Go-level unit test judgment (`go test ... -run TestX`).
+- **Artifacts must be clean sub-paths of the contract directory.** `verification put`
+  resolves artifact paths relative to the contract file and rejects `..`
+  components as "not a clean relative path." Place probes, fixtures, and other
+  assets in sub-directories under the same directory as the contract
+  (`design/fixtures/`, `design/probes/`), never in a sibling directory.
+- **Model snapshot must be current.** If the design's `base_model` references a
+  stale snapshot (built at a prior commit), `design put` fails with "repository
+  model snapshot is stale." Run `hermoso model build` first, then update
+  `base_model` in both the feature-design and verification-contract JSON.
+- **Environment defects are free to fix.** If you discover after sealing that
+  a command targets the wrong interpreter or a missing env seam, use
+  `hermoso verification amend` with a bumped contract revision — it re-seals
+  without consuming a verification attempt and needs no re-approval. Do not
+  burn an attempt on a known-bad command.
+- **Design schema drift:** before authoring, re-read the live
+  `feature-design` schema too. Requirements need `title`/`kind`/must-should-
+  could `priority`; decisions are `{decision, rationale}` pairs; constraints
+  are plain strings. A design authored against an older shape will not put.
+
 ## Gherkin tags
 
-Every scenario has exactly one `@scenario:<id>` and one
-`@judgment:<id>`. Its tags must agree with the JSON judgment:
+Every scenario has exactly one `@scenario:<id>` and one `@judgment:<id>`. Its
+tags must agree with the JSON judgment:
 
 - `@requirement:<id>`
 - `@criterion:<id>`

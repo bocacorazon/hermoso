@@ -89,7 +89,13 @@ The plan should include:
 For small features (1-2 work items), the plan can be 2-3 sentences. For
 complex features, write a full paragraph per section.
 
-Present the plan to the user and confirm before proceeding to graph authoring.
+**Do not present the plan and wait for confirmation when the user has already
+said "go" or "ready."** The design approval was the decision gate. Once the
+user says to proceed to construction, push through the plan authoring, work
+graph creation, validation, and dispatch without stopping at each sub-step.
+Only stop and ask when a genuine ambiguity blocks the next tool call —
+profile missing, model endpoint down, constitution violation unrecoverable.
+If you have enough context to make the next move, make it.
 
 ## Author the Work Graph
 
@@ -287,6 +293,16 @@ or accept a third construction round.
 - Release does NOT push — pushing to origin (and any deploy pipeline it
   triggers) is a separate, explicit user decision.
 
+## Implementation Path: Dispatch, Not Direct
+
+**Local-model dispatch via kanban workers is the default construction path.**
+The user runs a local fleet specifically to handle construction work —
+implementing work items directly (orchestrator-direct) instead of dispatching
+workers to that fleet wastes the infrastructure. Only implement directly when:
+the endpoint is confirmed down and cannot be restarted, or the change is
+self-evidently trivial (one file, one function, one test). When in doubt,
+dispatch.
+
 ## Common Pitfalls
 
 1. Dispatching before exact approval.
@@ -402,6 +418,20 @@ or accept a third construction round.
     during construction:
     `uv venv <path> && uv pip install --python <path>/bin/python -r requirements.txt pytest`,
     and verify importability of the key deps first.
+26. **Worker commits land on `wt/<task-id>` branches in kanban-owned
+    worktrees, NOT the Hermoso-prepared item worktrees.** The commits are in
+    the shared object database, so cherry-pick them into the managed worktree:
+    `cd <hermoso-item-worktree> && git cherry-pick <sha>` (skip if
+    already-present — empty cherry-pick means the commit already landed).
+    Then `work complete`. The kanban worktree's branch is ephemeral;
+    the Hermoso worktree is the canonical lane record.
+27. **A `started` work item can NOT be bound to a kanban card** —
+    `task bind` rejects it with \"not bindable from started.\"
+    This happens when the orchestrator ran `work start` during a manual
+    implementation attempt earlier in the session. Recovery: implement
+    the item directly in the managed worktree (the state is already
+    correct), commit, and `work complete`. Next time, only `work start`
+    immediately before dispatch, not during planning.
 
 ## Verification Checklist
 

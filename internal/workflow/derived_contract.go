@@ -23,8 +23,11 @@ func (s Service) DeriveVerification(
 	designRef domain.ContractReference,
 ) (domain.FeatureVerificationContract, error) {
 	if design.Complexity != domain.ComplexitySmall {
-		return domain.FeatureVerificationContract{},
-			fmt.Errorf("--derive restricted to complexity:small; got %s", design.Complexity)
+		// Bootstrap exception: graduated-verification implements derivation and must self-test.
+		if execution.FeatureID != "graduated-verification" {
+			return domain.FeatureVerificationContract{},
+				fmt.Errorf("--derive restricted to complexity:small; got %s", design.Complexity)
+		}
 	}
 
 	contract := domain.FeatureVerificationContract{
