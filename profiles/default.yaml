@@ -4,32 +4,32 @@
   "description": "Conservative single-profile bindings; override profile names and ordered skills for a local Hermes fleet.",
   "phases": {
     "controller": {
-      "profile": "default",
+      "profile": "qwen38",
       "skills": ["hermoso", "hermoso-constitution", "kanban-orchestrator"]
     },
     "design": {
-      "profile": "gemma4",
+      "profile": "qwen38",
       "skills": ["hermoso-design", "hermoso-verification-author"],
       "optional_spike_skill": "spike"
     },
     "verification_contract": {
-      "profile": "default",
+      "profile": "qwen38",
       "skills": ["hermoso-verification-author"]
     },
     "construction": {
-      "orchestrator_profile": "default",
+      "orchestrator_profile": "qwen38",
       "orchestrator_skills": ["hermoso-construction", "kanban-orchestrator"],
-      "worker_profile": "qwen38",
+      "worker_profile": "cloud-builder",
       "worker_skills": ["hermoso-construction", "test-driven-development", "systematic-debugging"]
     },
     "integration": {
-      "profile": "default",
+      "profile": "cloud-builder",
       "skills": ["hermoso-construction", "test-driven-development", "systematic-debugging"],
       "goal_mode": "integration",
-      "tier": "tier-0-local"
+      "tier": "tier-1-cloud-builder"
     },
     "verification": {
-      "profile": "gemma4",
+      "profile": "qwen38",
       "skills": ["hermoso-verification", "systematic-debugging"]
     }
   },
