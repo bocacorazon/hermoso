@@ -29,7 +29,7 @@
       "tier": "tier-1-cloud-builder"
     },
     "verification": {
-      "profile": "qwen38",
+      "profile": "gemma4",
       "skills": ["hermoso-verification", "systematic-debugging"]
     }
   },
