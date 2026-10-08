@@ -43,6 +43,30 @@ Changing any input invalidates approval. Hiding is an operational boundary:
 build contexts and worktrees do not receive hidden assets, but Hermoso does not
 claim adversarial OS-level secrecy.
 
+## Contract staging layout
+
+Contracts and their artifacts are authored in the working tree and ingested
+with `verification put <full-context> <contract-path>`. The layout is:
+
+- the contract file (e.g. `.hermoso-staging/feature-verification-contract.json`
+  or `design/feature-verification-contract.json`);
+- each declared artifact at `<contract-dir>/<artifact.path>`, **relative to
+  the contract file, verbatim under the extraction root**.
+
+At verification time, Hermoso materializes the sealed assets into
+`HERMOSO_VERIFICATION_ASSETS` and preserves `artifact.path` verbatim beneath
+it: a judgment command referencing
+`$HERMOSO_VERIFICATION_ASSETS/probes/run_check.py` needs the contract to
+declare the artifact as `probes/run_check.py`, not `assets/probes/run_check.py`
+(no implicit prefix, no extra nesting).
+
+Because the staging location is operator-managed, **sealed artifacts must be
+gitignored**. `verification put` and `verification amend` warn on stderr when
+a declared artifact is not covered by `.gitignore` (`git check-ignore`), so
+sealed tests cannot accidentally reach construction or the delivered artifact
+via `git add`. The warning is advisory; add the staging path to `.gitignore`
+before committing.
+
 ## Traceability
 
 Every judgment cites requirement, acceptance-criterion, and surface IDs. It may

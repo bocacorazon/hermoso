@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -43,6 +44,7 @@ Usage:
   hermoso start <feature-id> <repository>
   hermoso status <repository>
   hermoso context <project-id> <feature-id> <run-id> <repository>
+  hermoso context constitution <repository>
   hermoso model <build|status|query|explain> ...
   hermoso design put <project-id> <feature-id> <run-id> <repository> <path>
   hermoso verification <put|run|judge|remediate|resolve|amend> ...
@@ -435,6 +437,9 @@ func (a application) runStatus(ctx context.Context, args []string) int {
 }
 
 func (a application) runContext(ctx context.Context, args []string) int {
+	if len(args) >= 1 && args[0] == "constitution" {
+		return a.runContextConstitution(ctx, args[1:])
+	}
 	store, execution, _, err := a.resolve(ctx, args)
 	if err != nil {
 		return a.stateFailure(err)
@@ -443,6 +448,113 @@ func (a application) runContext(ctx context.Context, args []string) int {
 	return a.out.success("context", map[string]any{
 		"context": execution,
 	}, fmt.Sprintf("%s %s %s %s\n", execution.ProjectID, execution.FeatureID, execution.RunID, execution.Repository.Repository))
+}
+
+// runContextConstitution resolves the project constitution through the
+// documented resolution order and reports which file applies:
+//
+//  1. .hermoso/project.json "constitution_path" (explicit override)
+//  2. docs/constitution.md
+//  3. .specify/memory/constitution.md (Spec Kit convention)
+//
+// The command is read-only and never creates a file. When no candidate
+// exists it exits with a validation error naming all three candidates, so
+// skills can distinguish "resolved here" from "absent — block".
+func (a application) runContextConstitution(ctx context.Context, args []string) int {
+	if len(args) != 1 {
+		return a.out.usageError("context constitution requires exactly one repository path")
+	}
+	repository, err := state.DiscoverRepository(ctx, args[0])
+	if err != nil {
+		return a.stateFailure(err)
+	}
+	repoRoot := repository.Root
+	// The override lives in .hermoso/project.json, which does not exist on
+	// repositories that are not (yet) initialized by Hermoso. Best-effort
+	// read: a missing file simply means no override.
+	var project domain.Project
+	if raw, err := a.deps.FS.ReadFile(filepath.Join(repoRoot, ".hermoso", "project.json")); err == nil {
+		if err := json.Unmarshal(raw, &project); err != nil {
+			return a.out.failure(ExitFailure, ErrorInternal, fmt.Sprintf("read project identity: %v", err))
+		}
+	}
+	constitutionPath := resolveConstitutionPath(repoRoot, project, func(candidate string) (bool, error) {
+		_, statErr := a.deps.FS.Stat(candidate)
+		return statErr == nil, nil
+	})
+	if constitutionPath == "" {
+		return a.out.failure(
+			ExitFailure, ErrorValidation,
+			"no constitution found: checked .hermoso/project.json constitution_path, docs/constitution.md, and .specify/memory/constitution.md — run the hermoso-constitution skill to create one",
+		)
+	}
+	source := "docs"
+	switch {
+	case project.ConstitutionPath != "" &&
+		(!filepath.IsAbs(project.ConstitutionPath) && filepath.Join(repoRoot, project.ConstitutionPath) == constitutionPath ||
+			filepath.IsAbs(project.ConstitutionPath) && project.ConstitutionPath == constitutionPath):
+		source = "project_override"
+	case filepath.Base(filepath.Dir(constitutionPath)) == "memory":
+		source = "specify"
+	}
+	return a.out.success("context constitution", map[string]any{
+		"path":   constitutionPath,
+		"source": source,
+	}, fmt.Sprintf("constitution: %s (source=%s)\n", constitutionPath, source))
+}
+
+// resolveConstitutionPath returns the resolved constitution path for a
+// repository root, following the documented resolution order. It is shared
+// by the context-constitution command and the sealed-asset warnings so both
+// report the same file.
+func resolveConstitutionPath(repoRoot string, project domain.Project, stat func(string) (bool, error)) string {
+	if project.ConstitutionPath != "" {
+		candidate := project.ConstitutionPath
+		if !filepath.IsAbs(candidate) {
+			candidate = filepath.Join(repoRoot, candidate)
+		}
+		if ok, _ := stat(candidate); ok {
+			return candidate
+		}
+	}
+	for _, rel := range []string{
+		filepath.Join("docs", "constitution.md"),
+		filepath.Join(".specify", "memory", "constitution.md"),
+	} {
+		if ok, _ := stat(filepath.Join(repoRoot, rel)); ok {
+			return filepath.Join(repoRoot, rel)
+		}
+	}
+	return ""
+}
+
+// warnUnsealedVerificationAssets prints a warning when sealed verification
+// artifacts are not gitignored at the repository root. Sealed assets must
+// never reach construction or the delivered artifact, and the staging
+// location is operator-managed, so the tooling surfaces the risk instead of
+// silently trusting it (see bocacorazon/hermoso#11).
+func (a application) warnUnsealedVerificationAssets(repoRoot string, contractPath string, artifacts []domain.VerificationArtifact) {
+	base := filepath.Dir(contractPath)
+	for _, artifact := range artifacts {
+		full := filepath.Join(base, filepath.FromSlash(artifact.Path))
+		rel, err := filepath.Rel(repoRoot, full)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		if a.isGitIgnored(repoRoot, rel) {
+			continue
+		}
+		fmt.Fprintf(a.deps.Stderr, "warning: sealed verification artifact %q is not gitignored — add it to .gitignore before committing so it cannot reach construction or the delivered artifact\n", artifact.Path)
+	}
+}
+
+// isGitIgnored reports whether git ignores the given repository-relative
+// path. It shells out to the repository's own git so nested .gitignore
+// files, negations, and global config are all honored. If git is unavailable
+// it conservatively reports false (warn).
+func (a application) isGitIgnored(repoRoot, relative string) bool {
+	cmd := exec.Command("git", "-C", repoRoot, "check-ignore", "--quiet", "--", relative)
+	return cmd.Run() == nil
 }
 
 func (a application) resolve(ctx context.Context, args []string) (state.Store, domain.ContextRef, []string, error) {
@@ -621,6 +733,7 @@ func (a application) runVerificationContract(ctx context.Context, args []string)
 		if err := contract.Validate(); err != nil {
 			return a.out.failure(ExitFailure, ErrorValidation, err.Error())
 		}
+		a.warnUnsealedVerificationAssets(store.Repository().Root, rest[0], contract.Artifacts)
 		assets := make(map[string][]byte, len(contract.Artifacts))
 		base := filepath.Dir(rest[0])
 		for _, artifact := range contract.Artifacts {
@@ -729,6 +842,7 @@ func (a application) runVerificationContract(ctx context.Context, args []string)
 	if err := contract.Validate(); err != nil {
 		return a.out.failure(ExitFailure, ErrorValidation, err.Error())
 	}
+	a.warnUnsealedVerificationAssets(store.Repository().Root, rest[0], contract.Artifacts)
 	assets := make(map[string][]byte, len(contract.Artifacts))
 	base := filepath.Dir(rest[0])
 	for _, artifact := range contract.Artifacts {

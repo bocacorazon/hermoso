@@ -134,7 +134,7 @@ func TestCommandLabelsMatchCurrentCLI(t *testing.T) {
 	}
 	for _, current := range []string{
 		"hermoso status", "hermoso schema feature-design",
-		"hermoso context",
+		"hermoso context", "hermoso context constitution",
 		"hermoso schema work-graph", "hermoso schema phase-result",
 		"hermoso validate feature-design", "hermoso validate work-graph",
 		"hermoso validate phase-result",

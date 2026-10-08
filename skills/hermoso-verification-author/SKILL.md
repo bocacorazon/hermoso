@@ -109,6 +109,24 @@ Learned from repeated validation rejections — check these before ingesting:
   components as "not a clean relative path." Place probes, fixtures, and other
   assets in sub-directories under the same directory as the contract
   (`design/fixtures/`, `design/probes/`), never in a sibling directory.
+- **Artifact paths are verbatim under `HERMOSO_VERIFICATION_ASSETS`.** The
+  extraction root preserves `artifact.path` exactly — no implicit prefix. If
+  the judgment command runs
+  `... os.path.join(os.environ['HERMOSO_VERIFICATION_ASSETS'], 'probes/run_check.py')`,
+  the contract must declare the artifact as `probes/run_check.py`, and the
+  file must sit at `<contract-dir>/probes/run_check.py`. The declared path is
+  only checked for cleanliness at `put`; a mismatch between the declaration
+  and the command's `os.path.join(...)` argument (e.g. declaring
+  `assets/probes/run_check.py` while the command references
+  `probes/run_check.py`) fails at verification time with `FileNotFoundError`,
+  not at `put`.
+- **Keep the staging directory gitignored.** Contract staging (e.g.
+  `.hermoso-staging/`) is operator-managed and holds sealed assets that must
+  never be committed. `verification put` and `verification amend` warn on
+  stderr when a declared artifact is not covered by `.gitignore` (via
+  `git check-ignore`). Add the staging path to `.gitignore` before committing
+  so a stray `git add` cannot leak sealed tests to construction or the
+  delivered artifact.
 - **Model snapshot must be current.** If the design's `base_model` references a
   stale snapshot (built at a prior commit), `design put` fails with "repository
   model snapshot is stale." Run `hermoso model build` first, then update
