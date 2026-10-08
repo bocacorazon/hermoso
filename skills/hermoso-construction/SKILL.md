@@ -39,15 +39,20 @@ from conversational memory.
 
 ### Constitution Check
 
-Before authoring the work graph or dispatching any work, read the project
+Before authoring the work graph or dispatching any work, resolve the project
 constitution:
 
-1. Read `docs/constitution.md` in the target project.
-2. If `docs/constitution.md` does not exist, block and report that the
-   constitution is missing — the design phase should have enforced this, but
-   re-check to be safe.
-3. If the constitution exists, read each principle and check the work graph
-   against them. Each work item must not violate any constitution principle.
+1. Run `hermoso context constitution <repository>`. It resolves through the
+   documented order — `.hermoso/project.json` `constitution_path` override,
+   then `docs/constitution.md`, then `.specify/memory/constitution.md`
+   (Spec Kit convention) — and reports the resolved path and its source.
+   Do NOT assume `docs/constitution.md` is the only location, and do NOT
+   author a second constitution to satisfy a missing path.
+2. If the command fails, block and report that the constitution is missing
+   — the design phase should have enforced this, but re-check to be safe.
+3. Read the resolved constitution file, read each principle, and check the
+   work graph against them. Each work item must not violate any
+   constitution principle.
 4. Check the approved design's `decisions` array for escape-hatch overrides.
    If a violation is covered by an override entry (the decision names the
    principle being overridden and the rationale explains why), proceed.

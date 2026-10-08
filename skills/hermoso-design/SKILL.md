@@ -137,6 +137,11 @@ order and use the first file that exists:
 3. `.specify/memory/constitution.md` (Spec Kit convention — many repos that
    adopted Spec Kit first keep their constitution here and nowhere else)
 
+The binary implements this order: run `hermoso context constitution
+<repository>` and use its output. It is read-only, works on repositories
+that are not yet initialized by Hermoso, and fails with a validation error
+naming all three candidates when nothing exists.
+
 Read the resolved file and record its path plus content hash in the design doc,
 so the constitution a design was checked against is auditable. **Never author a
 second constitution to satisfy the path** — two constitutions in one repo drift

@@ -102,6 +102,10 @@ type Project struct {
 	KanbanTenant  string         `json:"kanban_tenant"`
 	CreatedAt     time.Time      `json:"created_at"`
 	ProfilePath   string         `json:"profile_path,omitempty"`
+	// ConstitutionPath is an optional per-project override for the
+	// constitution file. When set, it is the first candidate in the
+	// constitution resolution order (see app.resolveConstitutionPath).
+	ConstitutionPath string `json:"constitution_path,omitempty"`
 }
 
 func (p Project) Validate() error {
