@@ -47,6 +47,29 @@ func (s Store) Project(ctx context.Context) (domain.Project, error) {
 	return project, err
 }
 
+// SetWorktreeRoot sets the per-project managed-worktree root. An empty value
+// clears the override, restoring the in-repo default. The path must be
+// absolute when non-empty.
+func (s Store) SetWorktreeRoot(ctx context.Context, worktreeRoot string) (domain.Project, error) {
+	var project domain.Project
+	err := s.withLock(ctx, true, func() error {
+		existing, err := s.readProjectUnlocked()
+		if err != nil {
+			return err
+		}
+		existing.WorktreeRoot = worktreeRoot
+		if err := existing.Validate(); err != nil {
+			return fmt.Errorf("update worktree root: %w", err)
+		}
+		if err := writeJSONAtomic(s.repository.Root, s.projectPath(), existing); err != nil {
+			return err
+		}
+		project = existing
+		return nil
+	})
+	return project, err
+}
+
 func Initialize(ctx context.Context, start string, now time.Time) (domain.Project, bool, error) {
 	return InitializeWithProfile(ctx, start, "", now)
 }
