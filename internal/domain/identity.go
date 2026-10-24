@@ -106,6 +106,11 @@ type Project struct {
 	// constitution file. When set, it is the first candidate in the
 	// constitution resolution order (see app.resolveConstitutionPath).
 	ConstitutionPath string `json:"constitution_path,omitempty"`
+	// WorktreeRoot is an optional per-project override for where Hermoso
+	// creates its managed git worktrees. When empty, worktrees live under
+	// <repo>/.hermoso/worktrees. When set, it must be an absolute path
+	// outside the repository working tree.
+	WorktreeRoot string `json:"worktree_root,omitempty"`
 }
 
 func (p Project) Validate() error {
@@ -120,6 +125,9 @@ func (p Project) Validate() error {
 	}
 	if p.CreatedAt.IsZero() {
 		errs.add("created_at", "must be set")
+	}
+	if p.WorktreeRoot != "" && !filepath.IsAbs(p.WorktreeRoot) {
+		errs.add("worktree_root", "must be an absolute path")
 	}
 	return validationResult(errs)
 }

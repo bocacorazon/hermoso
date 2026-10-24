@@ -43,6 +43,7 @@ Usage:
   hermoso init <repository>
   hermoso start <feature-id> <repository>
   hermoso status <repository>
+  hermoso worktree-root <repository> [path]
   hermoso context <project-id> <feature-id> <run-id> <repository>
   hermoso context constitution <repository>
   hermoso model <build|status|query|explain> ...
@@ -150,6 +151,8 @@ func (a application) run(ctx context.Context, args []string) int {
 		return a.runStart(ctx, args[1:])
 	case "status":
 		return a.runStatus(ctx, args[1:])
+	case "worktree-root":
+		return a.runWorktreeRoot(ctx, args[1:])
 	case "context":
 		return a.runContext(ctx, args[1:])
 	case "model":
@@ -575,12 +578,55 @@ func (a application) resolve(ctx context.Context, args []string) (state.Store, d
 	return store, execution, args[4:], nil
 }
 
-func (a application) service(store state.Store) (workflow.Service, error) {
-	manager, err := repository.NewManager(store.Repository().Root, filepath.Join(store.Repository().Root, ".hermoso", "worktrees"), "hermoso")
+func (a application) service(ctx context.Context, store state.Store) (workflow.Service, error) {
+	worktreeRoot := ""
+	project, err := store.Project(ctx)
+	if err == nil {
+		worktreeRoot = project.WorktreeRoot
+	} else if !errors.Is(err, state.ErrNotInitialized) {
+		return workflow.Service{}, err
+	}
+	// NewManager falls back to <repo>/.hermoso/worktrees when worktreeRoot is empty.
+	manager, err := repository.NewManager(store.Repository().Root, worktreeRoot, "hermoso")
 	if err != nil {
 		return workflow.Service{}, err
 	}
 	return workflow.Service{Store: store, Manager: manager, Now: a.deps.Now}, nil
+}
+
+func (a application) runWorktreeRoot(ctx context.Context, args []string) int {
+	if len(args) < 1 || len(args) > 2 {
+		return a.out.usageError("worktree-root requires: <repository> [path] — with a path it sets the managed worktree root, without it prints the current one")
+	}
+	repository := args[0]
+	store, status, err := state.Load(ctx, repository)
+	if err != nil {
+		return a.stateFailure(err)
+	}
+
+	current := status.Project.WorktreeRoot
+	if current == "" {
+		current = filepath.Join(store.Repository().Root, ".hermoso", "worktrees")
+	}
+	if len(args) == 1 {
+		return a.out.success("worktree-root", map[string]any{
+			"worktree_root": current,
+			"repository":    store.Repository().Root,
+		}, current+"\n")
+	}
+
+	project, err := store.SetWorktreeRoot(ctx, args[1])
+	if err != nil {
+		return a.stateFailure(err)
+	}
+	set := project.WorktreeRoot
+	if set == "" {
+		set = filepath.Join(store.Repository().Root, ".hermoso", "worktrees")
+	}
+	return a.out.success("worktree-root", map[string]any{
+		"worktree_root": set,
+		"repository":    store.Repository().Root,
+	}, set+"\n")
 }
 
 func (a application) runDesign(ctx context.Context, args []string) int {
@@ -592,7 +638,7 @@ func (a application) runDesign(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.stateFailure(err)
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
@@ -638,7 +684,7 @@ func (a application) runVerificationContract(ctx context.Context, args []string)
 	if err != nil {
 		return a.stateFailure(err)
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
@@ -885,7 +931,7 @@ func (a application) runApprove(ctx context.Context, args []string) int {
 	if len(rest) == 4 {
 		comment = rest[3]
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
@@ -911,7 +957,7 @@ func (a application) runGraph(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
@@ -936,7 +982,7 @@ func (a application) runConstruction(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.stateFailure(err)
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
@@ -985,7 +1031,7 @@ func (a application) runTask(ctx context.Context, args []string) int {
 	if len(rest) != 2 {
 		return a.out.usageError("task bind requires work item ID and task ID")
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
@@ -1005,7 +1051,7 @@ func (a application) runWork(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.stateFailure(err)
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
@@ -1056,7 +1102,7 @@ func (a application) runResult(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
@@ -1079,7 +1125,7 @@ func (a application) runResume(ctx context.Context, args []string) int {
 	if len(rest) != 0 {
 		return a.out.usageError("resume accepts only full context")
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
@@ -1095,7 +1141,7 @@ func (a application) runRelease(ctx context.Context, args []string) int {
 	if err != nil {
 		return a.stateFailure(err)
 	}
-	service, err := a.service(store)
+	service, err := a.service(ctx, store)
 	if err != nil {
 		return a.out.failure(ExitFailure, ErrorInternal, err.Error())
 	}
